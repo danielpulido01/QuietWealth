@@ -6,48 +6,37 @@ Provide an expedited financial trust record for SMEs.
 # Auth
 
 ## Recomendaciones Rodri
-- OpenID connect no es necesario
 - Definir qué contenidos va a tener el JWT
 - Ver lo del HTTPS required
 - Client ID and Client Secret irían dentro del jwt
 - Cuánto de expiración al token
 - Cuánto al refresh
 - CSRF donde ponerlo, qué es?
-- Microsoft Entra o Google?
-- Dejar un solo lugar para storage de secrets
 - Qué vamos a hacer con esos casos que puede tardar hasta 5 segundos para auth? Progress bar o label para indicar al usuario
 - Soporta thousands concurrent pero cuántos necesita mi app? Ver cuántos esperamos y ver si están bajo el treshold estamos bien
 - El jwt probablemente no pase de 10 kb pero hay que definir lo que lleva
 - Cuantificar cuantas autenticaciones en el horario establecido
 - Quitar la hablada innecesaria
 - Aterrizar bien el workflow
-- Facade está bien
-- DTO está bien
 
 ---
 
 ## Integration Spec
 
 ### Name
-Auth0 Authentication Platform
-
-### Provider
-Auth0 by Okta
+Auth0 Authentication Platform by Okta
 
 ### Protocol
 - HTTPS
 - REST API
 - OAuth 2.0
-- OpenID Connect (OIDC)
 - JSON Web Tokens (JWT)
 
 Integrated Identity Providers:
-- Google Login
 - Microsoft Login (Microsoft Entra ID)
 
 ### Security Constraints
 - OAuth 2.0 Authorization Code Flow
-- OpenID Connect authentication
 - JWT validation
 - Session validation in backend
 - HTTPS required for all authentication traffic
@@ -60,8 +49,6 @@ Integrated Identity Providers:
 
 ### Configuration and Secure Parameter Storage
 
-Sensitive parameters will be stored securely using environment variables and secret management services.
-
 Configuration parameters:
 - AUTH0_DOMAIN
 - AUTH0_CLIENT_ID
@@ -69,34 +56,22 @@ Configuration parameters:
 - AUTH0_CALLBACK_URL
 - AUTH0_AUDIENCE
 
-Possible secure storage locations:
+Secure storage locations:
 - .env files for local development
-- Azure Key Vault
-- AWS Secrets Manager
+- Azure Key Vault for production and QA
 - GitHub Actions Secrets
-- CI/CD secure deployment variables
-
-No secrets or API credentials will be hardcoded in the repository.
 
 ### Throughput
 
-Auth0 supports enterprise-scale authentication workloads with global infrastructure.
-
 Expected integration characteristics:
 - Average authentication response time: 1–5 seconds
-- JWT payload size: typically below 10 KB
-- Session duration configurable between minutes and days
+- JWT payload size: below 10 KB
 - Support for thousands of concurrent authentication requests
 
 Potential bottleneck:
 Large concurrent login spikes during business hours for SME users accessing financial trust records.
 
-Mitigation strategy:
-- Use internal JWT session reuse after initial authentication
-- Cache Auth0 public signing keys (JWKS)
-- Avoid repeated token validation requests
-- Asynchronous user profile synchronization
-- Stateless backend authentication architecture
+No mitigation necessary since we expect XXX users daily and are not expecting thousands of concurrent auth requests. JSON payloads will have a size of XX KB which is handled easily by Auth0.
 
 ### Workload
 
@@ -111,18 +86,16 @@ Potential risks:
 - Network congestion during peak hours
 
 Mitigation strategy:
-- Asynchronous login flow
 - Frontend loading states and retry mechanisms
 - Session caching
 - Configurable timeout policies
-- Decoupled authentication microservice
 
 ### Integration Strategy
 
 Authentication Flow:
-1. User selects "Continue with Google" or "Continue with Microsoft"
+1. User selects "Continue with Microsoft"
 2. Frontend redirects user to Auth0 Universal Login
-3. Auth0 federates authentication with Google or Microsoft
+3. Auth0 federates authentication with Microsoft
 4. Identity provider authenticates the user
 5. Auth0 returns authorization code to QuietWealth backend
 6. Backend exchanges authorization code for tokens
@@ -158,11 +131,5 @@ https://auth0.com/docs
 - OAuth 2.0 Framework  
 https://datatracker.ietf.org/doc/html/rfc6749
 
-- OpenID Connect Specification  
-https://openid.net/connect/
-
 - Microsoft Entra ID Documentation  
 https://learn.microsoft.com/en-us/entra/
-
-- Google Identity Platform  
-https://developers.google.com/identity
