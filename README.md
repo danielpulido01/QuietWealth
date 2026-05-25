@@ -3,6 +3,8 @@
 ## Problem Statement
 Provide an expedited financial trust record for SMEs.
 
+## UX prototyping
+
 # Frontend Design
 
 ## Technology Stack
@@ -23,6 +25,8 @@ Provide an expedited financial trust record for SMEs.
 - Environments: Development, Stage and Production
 - Environment Deployment Tools: Azure Devops Environments
 - Observability Framework: Azure Application Insights SDK
+
+## Authentication and Authorization
 
 # Backend Design
 
