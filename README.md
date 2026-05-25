@@ -3,6 +3,12 @@
 ## Problem Statement
 Provide an expedited financial trust record for SMEs.
 
+# Frontend Design
+
+# Backend Design
+
+# Data Design
+
 # Auth
 
 ## Recomendaciones Rodri
