@@ -1,4 +1,4 @@
-import { parseWithSchema } from "../utils/schemaValidator";
+import { parseWithSchema } from "../data-validation/schema-validator";
 import {
   forgotPasswordRequestSchema,
   loginRequestSchema,

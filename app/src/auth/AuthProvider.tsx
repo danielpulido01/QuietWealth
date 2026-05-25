@@ -6,7 +6,7 @@ import {
   loginRequestSchema,
   resetPasswordRequestSchema,
 } from "./auth-schemas";
-import { parseWithSchema } from "../utils/schemaValidator";
+import { parseWithSchema } from "../data-validation/schema-validator";
 
 type User = {
   userId: string | null;

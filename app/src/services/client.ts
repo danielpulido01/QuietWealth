@@ -2,7 +2,7 @@ import type { ZodTypeAny } from "zod";
 import { ApiError, NetworkError } from "../models/app-error";
 import { errorHandler } from "../utils/error-handler";
 import { logger } from "../utils/logger";
-import { parseWithSchema } from "../utils/schemaValidator";
+import { parseWithSchema } from "../data-validation/schema-validator";
 import { interceptHttpResponse } from "./httpInterceptors";
 
 export type ApiSourceName = string;
