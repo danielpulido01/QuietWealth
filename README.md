@@ -5,7 +5,47 @@ Provide an expedited financial trust record for SMEs.
 
 # Frontend Design
 
+## Technology Stack
+- Application Type: SSR Web App
+- Web Framework: Reactjs version 19.2
+- Web server: NodeJS version 21 with Vite
+- Coding Language: TypeScript 5.9.3
+- Unit Testing: Jest version 30.2.0 
+- Data Validations: Zod 4.3.6
+- Code Prettier Framework: Prettier 3.8.1
+- Code Style Framework: ESLint 10.0.2
+- Integration Testing: Playwright version 1.58.2
+- Cloud Service: Azure
+- Hosted Services with the Cloud Service: Azure App Service
+- Code Repositories Service: Azure DevOps
+- Code Automation Tasks Tool: Husky 9.1.7
+- CI/CD Pipeline Technology: Azure DevOps Pipelines
+- Environments: Development, Stage and Production
+- Environment Deployment Tools: Azure Devops Environments
+- Observability Framework: Azure Application Insights SDK
+
 # Backend Design
+
+## Technology Stack
+- API style: REST API over HTTPS
+- API specification standard: OpenAPI
+- API gateway and hosting: Azure API Management + Azure App Service
+- Database: Azure SQL Database
+- File storage: Azure Blob Storage
+- Asynchronous operations and notifications: Azure Notification Hubs
+- Load balancing: no dedicated load balancer required for the expected traffic profile
+- Backend framework and language: .NET SDK 10.0.102, ASP.NET Core
+- Repository structure: monorepo shared with the frontend; backend folder: (AGREGAR) ``
+- Testing: xUnit for unit and integration tests
+- API documentation tooling: Swagger / OpenAPI tooling for contract publication and validation
+- Code quality: `dotnet format` and built-in .NET analyzers
+- Services (CAMBIAR):
+  - Authentication service
+  - Document upload service
+  - DUA generation orchestration service
+  - Notification service
+  - Result download service
+
 
 # Data Design
 
