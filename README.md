@@ -50,6 +50,155 @@ Provide an expedited financial trust record for SMEs.
   - Notification service
   - Result download service
 
+## Security
+- Transport security: HTTPS enforced at Azure API Management for all public endpoints
+- Authentication:
+  - Username, password, and OTP are validated server-side
+  - After successful credential and OTP validation, the backend issues JWT bearer tokens
+  - JWT signing algorithm: RS256
+  - JWT tokens are required for all protected endpoints
+- Encryption at rest:
+  - Azure SQL Database uses Transparent Data Encryption (TDE) with service-managed keys
+  - Reference: https://learn.microsoft.com/en-us/azure/azure-sql/database/security-overview?view=azuresql#transparent-data-encryption-encryption-at-rest-with-service-managed-keys
+- Request payload limits:
+  - General API payload limit: 10 MB
+  - File upload endpoints exception: up to 100 MB per request to support realistic document sets with multiple PDF, Excel, Word, and scanned image files
+  - Requests above these limits must be rejected with a clear validation error
+- Rate limiting at Azure API Management:
+  - Maximum concurrent connections per authenticated client: 10
+  - Request rate limit per authenticated client: 60 requests per minute
+  - Stricter limits must be applied to authentication endpoints to reduce abuse risk
+- Data retention and archiving:
+  - Production operational data and generated files remain in the active production environment for 90 days
+  - After 90 days, records and generated artifacts are moved to an archive tier for audit and traceability purposes
+  - Archived data is retained according to institutional or customs compliance requirements
+
+## Observability
+- Telemetry platform: Azure Application Insights, aligned with the frontend for unified end-to-end telemetry
+- Dashboard and analysis tool: Azure Monitor
+- Logged backend events:
+  - AuthLoginRequested
+  - AuthLoginSucceeded
+  - AuthLoginFailed
+  - OtpValidationSucceeded
+  - OtpValidationFailed
+  - UserLoggedOut
+  - FileUploadStarted
+  - FileUploadCompleted
+  - FileUploadRejected
+  - SupportedFilesValidated
+  - <<Agregar otros>>
+  - <<Agregar otros>>
+  - <<Agregar otros>>
+  - <<Agregar otros>>
+  - <<Agregar otros>>
+  - ApiRequestFailed
+  - UnhandledExceptionCaptured
+- Progress polling guideline: do not log every frontend polling request; log only meaningful status transitions and exceptional progress-check failures
+
+### Operational metrics (required)
+- Latency metrics: at minimum P95/P99 per API endpoint and critical business flow.
+- Error metrics: request error rate (4xx/5xx), dependency failure rate, and timeout rate.
+- Saturation metrics: CPU/memory utilization, queue depth/age, and worker concurrency saturation.
+- Monitoring stack options:
+  - Self-managed: Prometheus + Grafana.
+  - Managed: Azure Monitor.
+
+### Application observability patterns (required)
+- Health checks: implement `liveness` and `readiness` endpoints for API and workers.
+- Correlation IDs: propagate a single correlation ID across all services, async messages, logs, traces, and domain events.
+- SLIs defined from design: availability and latency SLIs must be defined at architecture stage for each critical user flow.
+
+## Infrastructure (DevOps)
+<<Falta agregar los scripts de provisioning para ci cd>>
+<<Podemos agregar las reglas que va a tener el github para branching y demás>>
+
+### CI/CD orchestration tool
+- Standard tool: **Azure DevOps Pipelines** (single CI/CD control plane from this monorepo).
+- Rationale: repository-native workflows, PR checks, environments, approvals, and strong Azure integration.
+
+### Infrastructure as Code (IaC)
+- Standard tool: **Terraform** for provisioning and updates across environments.
+- Managed resources via Terraform:
+- Azure API Management
+- Azure App Service (API hosting)
+- Azure SQL Database
+- Azure Blob Storage
+- Azure Notification Hubs
+- Observability resources (Application Insights / Azure Monitor where applicable)
+
+### Environments and deployment model
+- Environments: `dev`, `stage`, `prod` (isolated by resource group and/or subscription).
+- Deployment pattern:
+- `dev`: automatic deployment on merge to `develop`.
+- `stage`: automatic deployment from `main` after CI success.
+- `prod`: manual approval + protected environment gate.
+- Application deployment target: **Azure App Service** (no Kubernetes required for current scope).
+- Production release strategy: deployment slots (`staging` -> `production`) with slot swap and rollback.
+
+### Pipeline structure
+- `ci-frontend`: install, lint, test, build frontend.
+- `ci-backend`: restore, build, test backend (.NET), run static analysis/format checks.
+- `security-scan`: dependency/license checks and secret scanning.
+- `infra-plan`: `terraform fmt` + `terraform validate` + `terraform plan` per environment.
+- `deploy-dev` / `deploy-stage` / `deploy-prod`: apply infra changes (as approved) and deploy application artifacts.
+
+### Governance and quality gates
+- Required PR checks before merge: frontend CI, backend CI, security scan.
+- Protected branches: `main` and release branches.
+- Environment approvals required for `prod`.
+- Artifact/version traceability required per deployment (commit SHA, build ID, release timestamp).
+
+## Availability
+<<No creo que necesitemos 4 nueves, creo que podemos bajarlo a 3>>
+99.99% uptime = 0.01% downtime per year = 52.56 minutes/year (≈ 0.876 hours/year)
+
+### Resilience patterns (required)
+- Circuit breaker per downstream dependency (SQL, Blob, Notification Hubs, external APIs) to fail fast when an integration is unhealthy and protect API latency.
+- Timeouts + retries with exponential backoff (and jitter) for transient failures; retries only for idempotent operations or operations protected with idempotency keys.
+- Bulkhead isolation so one slow dependency cannot collapse the full API: separate connection pools, bounded concurrency, and isolated worker/queue paths by integration.
+
+### Controlled degradation (required)
+- Feature flags to disable non-critical capabilities quickly (notifications, advanced enrichments, non-essential validations) while preserving core transaction flows.
+- Partial responses when optional downstream data is unavailable; return available data + explicit `partial=true` and error details per missing section.
+- Absorption queues (outbox + async processing) for burst traffic and slow dependencies to decouple request handling from eventual side effects.
+
+With the most recent official SLA (April 8, 2026) for your stack:
+
+|Component	| SLA | Maximum theoretical downtime/year|
+|-----------|-----|--------------------------|
+|Azure API Management |	99.99% (Premium multi-region)	| 4.38 h / 0.876 h|
+|Azure App Service	| 99.99% (with 2+ AZ) | 4.38 h / 0.876 h|
+|Azure SQL Database	| 99.99% (no zone-redundant) / 99.995% (zone-redundant)	| 0.876 h / 0.438 h|
+|Azure Blob Storage	| 99.9% write hot; 99.99% read RA-GRS/RA-GZRS (depends on tier/redundancy) | 8.76 h / 0.876 h|
+|Azure Notification Hubs | 99.9% | 8.76 h|
+
+### Single points of failure (SPOF)
+- APIM in a single region or tier without multi-region.
+- App Service without Availability Zones.
+- SQL without zone redundancy + regional failover.
+- Blob in the synchronous write path (99.9% typical for write hot).
+- Notification Hubs if treated as a critical path of the transaction.
+
+### Recovery/mitigation for what doesn't provide 99.99% "by default"
+- APIM: use Premium with multi-region deployment and failover.
+- App Service: deploy across 2+ Availability Zones (ideally with a regional DR strategy).
+- SQL: zone-redundant + auto-failover group regional.
+- Blob: RA-GZRS/RA-GRS, retries with backoff, and decouple writing with asynchronous processing.
+- Notification Hubs: avoid blocking the main flow; use outbox + retries + DLQ + alternate channel (email/SMS) for incidents.
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # Data Design
 
