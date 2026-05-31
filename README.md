@@ -187,12 +187,233 @@ With the most recent official SLA (April 8, 2026) for your stack:
 - Blob: RA-GZRS/RA-GRS, retries with backoff, and decouple writing with asynchronous processing.
 - Notification Hubs: avoid blocking the main flow; use outbox + retries + DLQ + alternate channel (email/SMS) for incidents.
 
+## Scalability
+
+## Backend key workflows
+
+## Architecture diagram in layers
+
+## Design Considerations
+
+## Source Code
+
+### Backend scaffold generation scope
+- Use a specialized scaffolding agent to generate the backend skeleton in `server/` from this technical specification.
+- Target stack for scaffolded code: ASP.NET Core (.NET SDK 10.0.102) with adapters for Azure SQL, Azure Blob Storage, and Azure Notification Hubs.
+- The generated output must include only structure artifacts: project/solution files, folders, class/interface definitions, DTOs, request/response contracts, configuration classes, DI wiring, and CI/CD scripts/templates.
+- The generated output must not include functional business logic: no extraction/mapping algorithms, no production SQL queries, no external API side effects, and no hardcoded credentials.
+- Methods may be created as stubs (`throw new NotImplementedException()` or equivalent) until implementation phase.
+
+### Monorepo target structure (backend, domain-first)
+- Backend root: [`server/`](/server)
+- Source root: [`server/src/`](/server/QuietWealth.Backend)
+- Domain modules root: [`server/QuietWealth.Backend/domains/`](/server/QuietWealth.Backend/domains)
+- Cross-domain ACL root: [`server/QuietWealth.Backend/acls/`](/server/QuietWealth.Backend/acls)
+- Shared kernel root: [`server/QuietWealth.Backend/shared/`](/server/QuietWealth.Backend/shared)
+- Tests root: [`server/tests/`](/server/tests)
+- Deployment/IaC root: [`server/deploy/`](/server/deploy)
+
+### Required structure inside each domain module
+- For every domain folder under `domains/<domain-name>/`, scaffold exactly these subfolders:
+  - `controllers/`
+  - `models/`
+  - `repositories/`
+  - `services/`
+- Example domains to scaffold first:
+  - [`server/QuietWealth.Backend/domains/identity-access/`](/server/QuietWealth.Backend/domains/identity-access)
+  - [`server/QuietWealth.Backend/domains/document-intake/`](/server/QuietWealth.Backend/domains/document-intake)
+  - [`server/QuietWealth.Backend/domains/retention-archival/`](/server/QuietWealth.Backend/domains/retention-archival)
+  - <<Agregar otros>>
+
+### ACL policy for cross-domain communication
+- All cross-domain calls must go through the ACL layer in [`server/QuietWealth.Backend/acls/`](/server/QuietWealth.Backend/acls).
+- No domain is allowed to reference another domain's `repositories/` or `services/` directly.
+- ACLs must expose explicit translator/adaptor contracts between domains (anti-corruption boundary).
+- Suggested ACL modules:
+  - <<Agregar otros>>
+
+
+### CI/CD and IaC source folders
+
+#### GitHub Environments
+Two environments must exist in the repo settings:
+
+| Environment | Branch | App suffix |
+|---|---|---|
+| `QA` | `staging` | `qa*` |
+| `Production` | `main` | `prod*` |
+
+#### Workflows
+Four workflow files, all following the same structure.
+
+**Triggers:**
+- Push to `main` → `paths: server/**` or `app/**` → deploys to Production
+- Push to `staging` → same path filters → deploys to QA
+- All support `workflow_dispatch`
+
+**Job pattern:**
+```
+build (environment: QA|Production, permissions: contents:read)
+  └─ deploy (needs: build, permissions: id-token:write + contents:read)
+```
+
+To enable OIDC token exchange with azure, `id-token: write` is required on the `deploy` job only.
+
+#### Secrets (stored per GitHub environment)
+
+**QA environment:**
+```
+AZUREAPPSERVICE_CLIENTID_QA_FRONTEND
+AZUREAPPSERVICE_CLIENTID_QA_API
+AZUREAPPSERVICE_TENANTID_QA
+AZUREAPPSERVICE_SUBSCRIPTIONID_QA
+VITE_API_BASE_URL                    ← build-time only, frontend
+```
+
+**Production environment:**
+```
+AZUREAPPSERVICE_CLIENTID_PROD_FRONTEND
+AZUREAPPSERVICE_CLIENTID_PROD_API
+AZUREAPPSERVICE_TENANTID_PROD
+AZUREAPPSERVICE_SUBSCRIPTIONID_PROD
+VITE_API_BASE_URL_PROD               ← build-time only, frontend
+```
+
+`VITE_API_BASE_URL*` is injected as `env:` on the `npm run build` step — baked into the static bundle at build time. It is **not** an Azure app setting.
+
+**Azure login step:**
+```yaml
+- uses: azure/login@v2
+  with:
+    client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_QA_FRONTEND }}
+    tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_QA }}
+    subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_QA }}
+```
+
+#### OIDC / Entra ID Setup (`infra/setup-github-oidc.ps1`)
+Run once per environment. Idempotent. Requires `az login` + `gh auth login`.
+For each of the 4 app/role combos (`prod-frontend`, `prod-api`, `qa-frontend`, `qa-api`):
+
+1. Create Entra ID app registration named `dp-{env}-{role}-deploy`
+2. Create a service principal for it
+3. Add a federated credential:
+   - issuer: `https://token.actions.githubusercontent.com`
+   - subject: `repo:{owner/repo}:environment:{Production|QA}`
+   - audience: `api://AzureADTokenExchange`
+4. Assign `Contributor` role scoped to the specific Web App resource (not subscription-wide)
+5. Call `gh secret set` to write the 3 OIDC secrets into the correct GitHub environment
+
+Each Web App has its own Entra app registration and `clientId`. `tenantId` and `subscriptionId` are shared within an environment.
+
+#### Bicep Infra (`infra/`)
+
+**Scope:** `subscription` level — creates the resource group itself.
+
+**Locations:**
+- RG metadata: `eastus`
+- Resources deployed to: `westcentralus`
+
+**Per-environment resources:**
+- Linux App Service Plan `asp-dp-{env}` — SKU B1 (shared)
+- Frontend Web App (`Node|24-lts`) — startup: `npx --yes serve -s . -l $PORT`
+- API Web App (`DOTNETCORE|10.0`) — startup: `dotnet QuietWealth.Api.dll`
+
+**API app settings provisioned by Bicep:**
+```
+ASPNETCORE_ENVIRONMENT    = "Production" (prod) | "Development" (qa — enables Swagger)
+Supabase__Url             = <from SUPABASE_URL env var>
+Supabase__ServiceKey      = <from SUPABASE_SERVICE_KEY env var>
+AllowedOrigins__0         = https://{frontendAppName}.azurewebsites.net
+WEBSITE_RUN_FROM_PACKAGE  = 1
+```
+
+**Frontend app settings provisioned by Bicep:**
+```
+WEBSITE_NODE_DEFAULT_VERSION   = ~20
+SCM_DO_BUILD_DURING_DEPLOYMENT = false   ← disables Oryx; we ship pre-built /dist
+```
+
+**Parameters per environment:**
+
+| Param | qa | prod |
+|---|---|---|
+| `resourceGroupName` | `QuietWealth` | `QuietWealth` |
+| `resourceGroupLocation` | `eastus` | `eastus` |
+| `servicesLocation` | `westcentralus` | `westcentralus` |
+| `appServicePlanSku` | `B1` | `B1` |
+| `frontendAppName` | `qaquietwealth-frontend` | `prodquietwealth-frontend` |
+| `apiAppName` | `qaquietwealth-api` | `prodquietwealth-api` |
+
+**Secrets flow into Bicep via `.bicepparam`:**
+```bicep
+param supabaseUrl        = readEnvironmentVariable('SUPABASE_URL', '')
+param supabaseServiceKey = readEnvironmentVariable('SUPABASE_SERVICE_KEY', '')
+```
+
+Set before running `deploy.ps1`:
+```powershell
+$env:SUPABASE_URL         = '...'
+$env:SUPABASE_SERVICE_KEY = '...'
+.\deploy.ps1 -Environment qa   # or prod
+```
+
+Local values live in `deploy.secrets.ps1` (gitignored via `*.secrets.ps1`). These secrets are never in GitHub Actions secrets — infra deployment is manual only.
+
+**Deploy command (run by `deploy.ps1`):**
+```powershell
+az deployment sub create `
+  --name        dp-{env}-{timestamp} `
+  --location    westcentralus `
+  --template-file main.bicep `
+  --parameters  parameters/{env}.bicepparam
+```
+
+#### Trigger Conditions & Job Dependencies
+
+| Workflow file | Branch | Path filter | Artifact name |
+|---|---|---|---|
+| `main_prodquietwealth-frontend.yml` | `main` | `app/**` | `node-app` |
+| `main_prodquietwealth-api.yml` | `main` | `server/**` | `.net-app` |
+| `staging_qaquietwealth-frontend.yml` | `staging` | `app/**` | `node-app` |
+| `staging_qaquietwealth-api.yml` | `staging` | `server/**` | `.net-app` |
+
+Artifact is passed between jobs via `actions/upload-artifact` / `actions/download-artifact`.
+
+#### Key Constraints
+
+- Each Web App has its **own** Entra app registration and `clientId` — do not share across frontend/API
+- `id-token: write` must be on the **deploy job**, not the build job
+- `VITE_*` vars are build-time secrets, not runtime app settings — must be in the build job's `env:` block
+- `Supabase__Url` / `Supabase__ServiceKey` use ASP.NET Core's double-underscore config convention (maps to `Supabase:Url` / `Supabase:ServiceKey`)
+- Bicep `@secure()` params never appear in deployment logs
 
 
 
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+### Scaffold acceptance criteria
+- Solution compiles successfully with empty/stub implementations.
+- OpenAPI document is generated for all planned endpoints.
+- Dependency injection registrations resolve at startup.
+- Each domain contains `controllers`, `models`, `repositories`, and `services`.
+- Cross-domain dependencies are only implemented through the `acls` folder.
+
+### Backend Design Patterns
 
 
 

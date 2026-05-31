@@ -1,0 +1,4 @@
+# Prevent accidental commit of local secret overrides
+*.local.bicepparam
+*.secrets.ps1
+.env
