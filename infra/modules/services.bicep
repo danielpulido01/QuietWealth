@@ -26,7 +26,7 @@ resource plan 'Microsoft.Web/serverfarms@2023-01-01' = {
   }
   tags: {
     environment: environment
-    project: 'DesarrolloProfesional'
+    project: 'QuietWealth'
   }
 }
 
@@ -46,7 +46,7 @@ resource frontendApp 'Microsoft.Web/sites@2023-01-01' = {
       ftpsState: 'Disabled'
       http20Enabled: true
       appSettings: [
-        { name: 'WEBSITE_NODE_DEFAULT_VERSION', value: '~20' }
+        { name: 'WEBSITE_NODE_DEFAULT_VERSION', value: '~24' }
         // Disable Oryx build on deployment — we ship pre-built /dist artifacts
         { name: 'SCM_DO_BUILD_DURING_DEPLOYMENT', value: 'false' }
       ]
@@ -68,7 +68,7 @@ resource apiApp 'Microsoft.Web/sites@2023-01-01' = {
     siteConfig: {
       // Verify this version is listed in: az webapp list-runtimes --os linux
       linuxFxVersion: 'DOTNETCORE|10.0'
-      appCommandLine: 'dotnet DesarrolloProfesional.Api.dll'
+      appCommandLine: 'dotnet QuietWealth.Api.dll'
       minTlsVersion: '1.2'
       ftpsState: 'Disabled'
       http20Enabled: true

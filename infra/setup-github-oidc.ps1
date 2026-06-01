@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Wire GitHub Actions OIDC to Azure App Service for Desarrollo Profesional.
+    Wire GitHub Actions OIDC to Azure App Service for QuietWealth.
 
 .DESCRIPTION
     For each web app (frontend + API) in the target environment:

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Provision Desarrollo Profesional Azure infrastructure via Bicep.
+    Provision QuietWealth Azure infrastructure via Bicep.
 
 .DESCRIPTION
     Creates (or updates) the Resource Group, App Service Plan, frontend Web App

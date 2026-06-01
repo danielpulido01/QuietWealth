@@ -291,7 +291,7 @@ VITE_API_BASE_URL_PROD               ← build-time only, frontend
 ```
 
 #### OIDC / Entra ID Setup (`infra/setup-github-oidc.ps1`)
-Run once per environment. Idempotent. Requires `az login` + `gh auth login`.
+Run once per environment. Idempotent. Require `az login` + `gh auth login`.
 For each of the 4 app/role combos (`prod-frontend`, `prod-api`, `qa-frontend`, `qa-api`):
 
 1. Create Entra ID app registration named `dp-{env}-{role}-deploy`
