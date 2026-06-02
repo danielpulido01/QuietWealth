@@ -90,6 +90,18 @@ Provide an expedited financial trust record for SMEs.
 
 
 ---
+
+## Wireframes
+### Investment Detail Screen
+
+**Description**
+
+Shows verified SME financial metrics, growth charts, and expert certifications to support investor decision-making.
+
+![DetalleInversion01](Media/DetalleInv01.png)
+![DetalleInversion02](Media/DetalleInv02.png)
+![DetalleInversion03](Media/DetalleInv03.png)
+
 ## Authentication and Authorization
 
 # Backend Design
