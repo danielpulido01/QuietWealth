@@ -3,7 +3,6 @@
 ## Problem Statement
 Provide an expedited financial trust record for SMEs.
 
-
 # Frontend Design
 
 ## Technology Stack
@@ -92,6 +91,7 @@ Provide an expedited financial trust record for SMEs.
 ---
 
 ## Wireframes
+
 ### Investment Detail Screen
 
 **Description**
@@ -101,6 +101,28 @@ Shows verified SME financial metrics, growth charts, and expert certifications t
 ![DetalleInversion01](Media/DetalleInv01.png)
 ![DetalleInversion02](Media/DetalleInv02.png)
 ![DetalleInversion03](Media/DetalleInv03.png)
+
+### Testing results
+
+Tabla testing · MD
+| Participant | Duration | OS | Browser | Opinion Scale (1–5) | Open Feedback |
+|-------------|----------|----|---------|---------------------|---------------|
+| 542521286 | 49s | Windows | Chrome | 4 | "Considero que la información mostrada es clara." |
+| 510669335 | 42s | Windows | Chrome | 5 | "Esta bien" |
+| 543901432 | 17.8s | Windows | Brave | 4 | "all good" |
+| 508804036 | 70.1s | Windows | Edge | 5 | "." |
+| 542802936 | 99.5s | Windows | Edge | 5 | "Anuncios de invierta ahora no deberían de aparecer en la aplicación como tal, solo en una web." |
+| 537502878 | 50.1s | Linux | Firefox | 5 | "Muy detallada y presentable, no mejoraría nada." |
+| **Average** | **54.8s** | — | — | **4.7 / 5** | — |
+
+---
+
+### Heatmaps for clicks and drop-offs
+
+**Investment Detail Screen**
+![Dinv-HeatMap01](Media/heatmap1.png)
+![Dinv-HeatMap02](Media/heatmap2.png)
+![Dinv-HeatMap03](Media/heatmap3.png)
 
 ## Authentication and Authorization
 
