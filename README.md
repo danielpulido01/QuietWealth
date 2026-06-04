@@ -91,6 +91,34 @@ Provide an expedited financial trust record for SMEs.
 ---
 
 ## Wireframes
+### Login Screen
+**Description**
+
+Microsoft-authenticated entry point to the platform.
+
+![Login01](Media/login01.png)
+![Login02](Media/login02.png)
+
+### Marketplace Screen
+**Description**
+
+Lists certified SMEs with key financial metrics and trust indicators for investors to browse and compare.
+
+![Markectplace](Media/marketPlace.png)
+
+### Document Upload Screen
+**Description**
+
+Allows SMEs to submit financial documents for expert review and certification.
+
+![UploadaDocument](Media/loadDocuments.png)
+
+### Expert Validation Panel Screen
+**Description**
+
+Enables financial experts to review and certify pending SME applications.
+
+![validation](Media/validacion.png)
 
 ### Investment Detail Screen
 
@@ -123,6 +151,23 @@ Tabla testing · MD
 ![Dinv-HeatMap01](Media/heatmap1.png)
 ![Dinv-HeatMap02](Media/heatmap2.png)
 ![Dinv-HeatMap03](Media/heatmap3.png)
+
+### Usability Issues Detected
+ 
+| # | Screen | Issue | Severity |
+|---|--------|-------|----------|
+| 1 | Investment Detail | The "Invertir Ahora" CTA feels too prominent within the platform; one participant noted it is more appropriate for an external web page. | Medium |
+ 
+---
+### Corrections Applied
+ 
+| # | Issue | Correction | Decision Criteria |
+|---|-------|------------|-------------------|
+| 1 | "Invertir Ahora" CTA felt intrusive inside the platform | Reduced visual weight of the CTA within the Investment Detail screen | Keeps the platform focused on trust and information rather than aggressive selling |
+
+![bannerNuevo](Media/DetalleInv_bannerCambiado.png)
+
+---
 
 ## Authentication and Authorization
 
