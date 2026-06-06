@@ -334,6 +334,94 @@ With the most recent official SLA (April 8, 2026) for your stack:
 
 ## Backend key workflows
 
+### User authentication and session validation
+1. The frontend sends credentials to [`IdentityAccessController`](/server/QuietWealth.Backend/domains/identity-access/controllers/IdentityAccessController.cs).
+2. The backend validates the [`LoginRequest`](/server/QuietWealth.Backend/domains/identity-access/models/LoginRequest.cs).
+3. `IdentityAccessService` validates credentials, permissions, and session state.
+4. The backend creates a session through [`IUserSessionRepository`](/server/QuietWealth.Backend/domains/identity-access/repositories/IUserSessionRepository.cs).
+5. The backend returns a `LoginResponse` with JWT, user summary, roles, permissions, and expiration.
+6. Protected endpoints validate the JWT before running business logic.
+7. Logout invalidates the session and emits `UserLoggedOut`.
+
+Errors: `401 Unauthorized` for invalid credentials, `403 Forbidden` for missing permissions, expired tokens redirect the user to login.
+
+---
+
+### SME document intake
+1. The SME sends files to [`DocumentIntakeController`](/server/QuietWealth.Backend/domains/document-intake/controllers/DocumentIntakeController.cs).
+2. The backend checks `files.upload` permission and validates [`UploadFilesRequest`](/server/QuietWealth.Backend/domains/document-intake/models/UploadFilesRequest.cs).
+3. Files are validated by format and size.
+4. `DocumentIntakeService` creates a `DocumentBatch` with `SourceDocument` records.
+5. Metadata is saved through [`IDocumentBatchRepository`](/server/QuietWealth.Backend/domains/document-intake/repositories/IDocumentBatchRepository.cs).
+6. File content is stored in Azure Blob Storage.
+7. The batch becomes `uploaded` or `rejected`.
+8. The backend emits `FilesUploadStarted`, `FilesUploadCompleted`, or `FilesUploadRejected`.
+9. The backend returns `UploadFilesResponse`.
+
+Errors: `400 Bad Request` for invalid files, `413 Payload Too Large` for oversized uploads, `503 Service Unavailable` for storage failures.
+
+---
+
+### Expert validation and SME certification
+1. The expert requests pending SME submissions.
+2. The backend validates expert permissions.
+3. The backend loads pending `DocumentBatch` and `SourceDocument` metadata.
+4. The expert submits a decision: `approved`, `rejected`, or `needs_changes`.
+5. The backend validates that the batch is still reviewable.
+6. The certification service stores reviewer id, timestamp, notes, decision, and trust level.
+7. Approved SMEs become visible in the marketplace.
+8. Rejected or incomplete submissions remain hidden and trigger a notification.
+9. The backend emits a certification decision audit event.
+
+Errors: `403 Forbidden` for non-experts, `409 Conflict` for finalized batches, `400 Bad Request` for invalid decisions.
+
+---
+
+### Investment marketplace browsing
+1. The investor requests the marketplace list.
+2. The backend validates session and marketplace read permission.
+3. The backend queries only SMEs with active certification.
+4. Optional filters are applied: sector, trust level, growth, capital raised, and search text.
+5. The backend returns paginated card data: company, sector, badge, growth, raised capital, investors, and trust level.
+6. Financial documents are never returned in list responses.
+
+Errors: `400 Bad Request` for invalid filters, `200 OK` with empty list for no results, `503 Service Unavailable` for read model failures.
+
+---
+
+### Investment detail read flow
+1. The investor requests an SME detail by id.
+2. The backend verifies that the SME is certified and visible.
+3. The backend loads company profile, certification summary, metrics, and chart data.
+4. Authorization rules decide which metrics are visible.
+5. The response includes raised capital, active investors, growth rate, ROI, description, retention, MRR, and profit margin.
+6. Optional chart failures return `partial=true` with structured warning details.
+
+Errors: `404 Not Found` for missing or non-visible SMEs, `403 Forbidden` for restricted metrics.
+
+---
+
+### Audit and observability event capture
+1. Domain services emit events for meaningful business transitions.
+2. Events include correlation id, actor id, timestamp, event type, aggregate id, and safe metadata.
+3. Audit entries are saved through [`IAuditEntryRepository`](/server/QuietWealth.Backend/domains/audit-observability/repositories/IAuditEntryRepository.cs).
+4. Logs and traces are sent to Azure Application Insights.
+5. Azure Monitor tracks authentication, uploads, validation decisions, failures, and dependency health.
+
+Errors: audit failures are logged as operational incidents and retried through outbox when possible.
+
+---
+
+### Data retention and archival
+1. A scheduled job identifies records older than the active retention window.
+2. The service applies [`RetentionPolicyOptions`](/server/QuietWealth.Backend/shared/Configuration/RetentionPolicyOptions.cs).
+3. Eligible SQL records and Blob artifacts are moved to archival state.
+4. Archive metadata stores status, location, timestamp, and retention category.
+5. Links between SMEs, documents, certifications, and audit entries are preserved.
+6. The backend emits `RecordsArchived`.
+
+Errors: legal-hold records are skipped, partial failures are resumable, archive operations must be idempotent.
+
 ## Architecture diagram in layers
 
 ## Design Considerations
