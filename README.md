@@ -1,32 +1,39 @@
-# QuietWealth
+# QuietWealth — Expedited Financial Trust Record for SMEs
 
 ## Problem Statement
-Provide an expedited financial trust record for SMEs.
 
-# Frontend Design
+SMEs face slow, bureaucratic processes to certify their financial health, delaying capital access and investment. QuietWealth provides an expedited financial trust record by integrating document validation, risk analysis, and standardized financial conditions into a single certified report oriented to investors, establishing a low-risk certified investment ecosystem based on real revenue streams.
 
-## Technology Stack
-- Application Type: SSR Web App
-- Web Framework: React.js 19.2
-- Web Server: Node.js 22 with Next.js 15
-- Coding Language: TypeScript 5.9.3
-- Styling: TailwindCSS 4.1
-- State Management: Redux Toolkit 2.8
-- Unit Testing: Jest 30.2.0
-- Data Validations: Zod 4.3.6
-- Code Prettier Framework: Prettier 3.8.1
-- Code Style Framework: ESLint 10.0.2
-- Integration Testing: Playwright 1.52
-- HTTP Client: Axios 1.9
-- Auth SDK: Auth0 React SDK 2.2
-- Cloud Service: Azure
-- Hosted Service: Azure App Service
-- Code Repository: Azure DevOps Repos
-- Code Automation Tasks Tool: Husky 9.1.7
-- CI/CD Pipeline Technology: Azure DevOps Pipelines
-- Environments: Development, Stage, Production
-- Environment Deployment Tools: Azure DevOps Environments
-- Observability Framework: Azure Application Insights SDK
+---
+
+# 1. Frontend Design
+
+## [1.1 Technology Stack](app/)
+
+| Technology | Version | Justification |
+|---|---|---|
+| **Application Type** | SSR Web App | Server-side rendering enables auth-gated pages to be rendered on the server, reducing layout shift and preventing flash of unauthorized content for sensitive financial data |
+| **React.js** | `19.2` | Industry-standard UI library with mature ecosystem; concurrent rendering features (`Suspense`, `React.lazy`) are essential for the document upload and long-running compilation flows |
+| **Next.js** | `15` | Provides SSR, file-system routing, and built-in image optimization out of the box; integrates natively with Azure App Service Node.js runtime |
+| **Node.js** | `22` | LTS release; required by Next.js 15 SSR runtime on Azure App Service |
+| **TypeScript** | `5.9.3` | Static typing catches contract mismatches between API responses and UI state at compile time; essential for a data-intensive financial domain |
+| **TailwindCSS** | `4.1` | Utility-first approach maps directly to the design token model; JIT compiler eliminates dead CSS in production with zero configuration |
+| **Redux Toolkit** | `2.8` | Manages async thunks for document processing status tracking across page navigations; DevTools enable observability of state transitions during development |
+| **Jest** | `30.2.0` | De-facto standard for React unit testing; compatible with TypeScript via `ts-jest`; supports coverage thresholds enforced in CI |
+| **Zod** | `4.3.6` | Runtime schema validation for all API responses and form inputs; catches backend contract drift before data reaches Redux state |
+| **Prettier** | `3.8.1` | Enforces uniform formatting across the team; integrated with Husky pre-commit hooks to block non-conforming commits |
+| **ESLint** | `10.0.2` | Static analysis with custom rules that ban `dangerouslySetInnerHTML`, token storage in `localStorage`, and direct `console.log` calls |
+| **Playwright** | `1.52` | Cross-browser E2E and integration testing; supports Chromium and Firefox; first-class `msw` integration for mocking backend responses |
+| **Axios** | `1.9` | Provides interceptor support used by `AuthMiddleware` to attach Bearer tokens and handle 401 refresh centrally; cleaner API than native `fetch` for multipart document uploads |
+| **Auth0 React SDK** | `2.2` | Manages OAuth 2.0 Authorization Code + PKCE flow and silent token refresh without custom implementation; Microsoft Entra ID is federated through Auth0 |
+| **Husky** | `9.1.7` | Runs `lint-staged` on pre-commit; blocks commits that fail ESLint, Prettier, or TypeScript checks |
+| **Cloud Service** | Azure | Consistent with the backend infrastructure; reduces operational complexity and cross-cloud latency |
+| **Azure App Service** | — | Supports Node.js SSR runtimes natively; provides deployment slots (`staging → production`) enabling zero-downtime releases with instant rollback |
+| **Code Repository** | GitHub | Enables GitHub Actions CI/CD with OIDC-based Azure deployment, avoiding long-lived credentials |
+| **CI/CD** | GitHub Actions | OIDC token exchange with Azure App Service; branch-based environment promotion with manual approval for production |
+| **Azure Application Insights SDK** | — | Unified telemetry for frontend and backend; correlates traces across browser, SSR layer, and backend API using a single `correlationId` |
+
+---
 
 ## UX/UI Analysis
 
