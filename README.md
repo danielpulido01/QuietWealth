@@ -153,20 +153,19 @@ Tabla testing · MD
 ![Dinv-HeatMap02](Media/heatmap2.png)
 ![Dinv-HeatMap03](Media/heatmap3.png)
 
-### Usability Issues Detected
- 
+#### Usability Issues Detected
+
 | # | Screen | Issue | Severity |
-|---|--------|-------|----------|
+|---|---|---|---|
 | 1 | Investment Detail | The "Invertir Ahora" CTA feels too prominent within the platform; one participant noted it is more appropriate for an external web page. | Medium |
- 
----
-### Corrections Applied
- 
+
+#### Corrections Applied
+
 | # | Issue | Correction | Decision Criteria |
-|---|-------|------------|-------------------|
+|---|---|---|---|
 | 1 | "Invertir Ahora" CTA felt intrusive inside the platform | Reduced visual weight of the CTA within the Investment Detail screen | Keeps the platform focused on trust and information rather than aggressive selling |
 
-![bannerNuevo](Media/DetalleInv_bannerCambiado.png)
+![Updated Banner](Media/DetalleInv_bannerCambiado.png)
 
 ---
 
