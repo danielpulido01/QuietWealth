@@ -434,6 +434,127 @@ Shows the deployable containers and managed services used by the frontend, backe
 
 ![C4 Level 2 - Container Diagram](Media/c4-level-2-container-diagram.png)
 
+### Level 3 - Backend Layered Architecture
+Shows the internal components and layers of the ASP.NET Core backend container, including controllers, middleware, domain services, domain models, repositories, adapters, and external managed services.
+
+```mermaid
+flowchart TD
+
+    subgraph L1["① Client / Delivery Layer"]
+        direction LR
+        L1A["Layer entry"]
+        SME["SME User"]
+        INV["Investor"]
+        FEX["Financial Expert"]
+        SPA["React SPA · Vite · TypeScript · Tailwind"]
+    end
+
+    subgraph L2["② API Layer"]
+        direction LR
+        L2A["Layer entry"]
+        CTL["ASP.NET Core Controllers"]
+        DTO["Request / Response DTOs"]
+        OAS["OpenAPI / Swagger"]
+    end
+
+    subgraph L3["③ Middleware / Cross-Cutting Layer"]
+        direction LR
+        L3A["Layer entry"]
+        AUTH["Authentication · Auth0"]
+        AZP["Authorization Policies"]
+        ERR["Error Handling"]
+        CID["Correlation ID"]
+        LOG["Logging / Telemetry"]
+    end
+
+    subgraph L4["④ Domain Services Layer"]
+        direction LR
+        L4A["Layer entry"]
+        IAS["IdentityAccess\nService"]
+        DIS["DocumentIntake\nService"]
+        CVS["CertificationValidation\nService"]
+        MRS["MarketplaceRead\nService"]
+        AOS["AuditObservability\nService"]
+        RAS["RetentionArchival\nService"]
+    end
+
+    subgraph L5["⑤ Domain Model & Events Layer"]
+        direction LR
+        L5A["Layer entry"]
+        USR["UserSession\nAccessPolicy"]
+        SMEp["SMEProfile\nDocumentBatch"]
+        CERT["SourceDocument\nCertificationReview"]
+        AUD["AuditEntry\nRetentionRecord"]
+        EVT["Domain Events"]
+    end
+
+    subgraph L6["⑥ Repository Layer"]
+        direction LR
+        L6A["Layer entry"]
+        RUSS["IUserSession\nRepository"]
+        RODB["IDocumentBatch\nRepository"]
+        RAUD["IAuditEntry\nRepository"]
+        RRET["IRetentionRecord\nRepository"]
+    end
+
+    subgraph L7["⑦ Infrastructure Adapter Layer"]
+        direction LR
+        L7A["Layer entry"]
+        ASQL["Azure SQL\nAdapter"]
+        ABLS["Azure Blob\nStorage Adapter"]
+        ANHB["Notification Hub\nAdapter"]
+        AENID["Auth0 / Entra ID\nAdapter"]
+        AAIN["App Insights\nAdapter"]
+        OUTB["Outbox\nPublisher"]
+    end
+
+    subgraph L8["⑧ External Managed Services Layer"]
+        direction LR
+        L8A["Layer entry"]
+        ESQL["Azure SQL\nDatabase"]
+        EBLOB["Azure Blob\nStorage"]
+        ENHUB["Azure Notification\nHubs"]
+        EAUTH["Auth0 +\nMicrosoft Entra ID"]
+        EAINS["Azure Application\nInsights"]
+        EMON["Azure\nMonitor"]
+    end
+
+    %% Main vertical flow — one arrow per layer boundary
+    L1A --> L2A
+    L2A --> L3A
+    L3A --> L4A
+    L4A --> L5A
+    L5A --> L6A
+    L6A --> L7A
+    L7A --> L8A
+
+    classDef anchor fill:transparent,stroke:transparent,color:transparent;
+    class L1A,L2A,L3A,L4A,L5A,L6A,L7A,L8A anchor;
+```
+
+### Layer responsibilities
+
+| # | Layer | Responsibility |
+|---|-------|---------------|
+| 1 | **Client / Delivery** | User-facing React SPA; presents UI to SMEs, Investors, and Financial Experts. |
+| 2 | **API** | ASP.NET Core controllers expose REST endpoints; DTOs shape request/response contracts; OpenAPI documents the surface. |
+| 3 | **Middleware / Cross-Cutting** | Intercepts every request for auth, authorization, error normalization, correlation tracking, and telemetry. |
+| 4 | **Domain Services** | Orchestrates business use-cases (identity, document intake, certification, marketplace reads, audit, retention). |
+| 5 | **Domain Model & Events** | Pure domain entities, value objects, and domain events — no infrastructure dependencies. |
+| 6 | **Repository** | Contracts (`IRepository`) that abstract persistence; implementations live in the adapter layer. |
+| 7 | **Infrastructure Adapters** | Concrete implementations that talk to managed cloud services; isolates vendor SDKs from domain code. |
+| 8 | **External Managed Services** | Azure-hosted services (SQL, Blob, Notification Hubs, Auth0/Entra, Application Insights, Monitor). |
+
+### Communication rules
+
+- **Controllers → Services**: Controllers delegate all business logic to domain services; they never contain business rules.
+- **Services → Domain Models**: Services instantiate, mutate, and validate domain entities; entities are unaware of services.
+- **Services → Repositories**: Services call repository interfaces; they never reference adapters directly.
+- **Repositories → Adapters**: Each repository implementation is backed by exactly one infrastructure adapter.
+- **Adapters → External Services**: All vendor-specific SDK calls are confined to the adapter layer.
+- **Cross-domain communication**: Domain services communicate across bounded contexts only via **domain events** or an **Anti-Corruption Layer (ACL)** — never by direct service-to-service calls.
+- **Middleware is non-intrusive**: Cross-cutting concerns (auth, logging, error handling) are applied via ASP.NET Core middleware and do not appear inside domain code.
+
 ## Design Considerations
 
 ## Source Code
