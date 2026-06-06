@@ -96,8 +96,7 @@ Provide an expedited financial trust record for SMEs.
 
 Microsoft-authenticated entry point to the platform.
 
-![Login01](Media/login01.png)
-![Login02](Media/login02.png)
+![Login](Media/login.png)
 
 ### Marketplace Screen
 **Description**
