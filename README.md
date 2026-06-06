@@ -424,6 +424,16 @@ Errors: legal-hold records are skipped, partial failures are resumable, archive 
 
 ## Architecture diagram in layers
 
+### Level 1 - Context
+Shows the main users, external identity provider, Azure services, and notification channel involved in the QuietWealth platform.
+
+![C4 Level 1 - Context Diagram](Media/c4-level-1-context-diagram.png)
+
+### Level 2 - Container
+Shows the deployable containers and managed services used by the frontend, backend, data, identity, observability, notifications, and CI/CD flow.
+
+![C4 Level 2 - Container Diagram](Media/c4-level-2-container-diagram.png)
+
 ## Design Considerations
 
 ## Source Code
