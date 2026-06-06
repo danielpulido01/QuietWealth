@@ -169,6 +169,191 @@ Tabla testing · MD
 
 ---
 
+## [1.3 Component Design Strategy](app/components)
+
+Atomic Design: atoms → molecules → organisms → templates → pages.
+
+```
+app/components/
+ ├ atoms/
+ ├ molecules/
+ ├ organisms/
+ ├ templates/
+ ├ pages/
+ ├ hooks/
+ ├ i18n/
+ └ styles/
+```
+
+### [Atoms](app/components/atoms)
+Pure UI, no business logic, no API calls.
+```
+Button · Input · Badge · Spinner · ProgressBar
+TrustIndicator · Label · Card · Toast · Modal · StatCard · MaskedValue
+```
+
+### [Molecules](app/components/molecules)
+Composed from atoms; UI logic only.
+```
+SMECard · FilterBar · DocumentUploader · FormField · StatusBadge · InfoBanner
+```
+
+### [Organisms](app/components/organisms)
+Layout composition only.
+```
+MarketplaceGrid · InvestmentDetailPanel · ValidationQueue
+DocumentUploadZone · Navbar · Sidebar · PageContainer
+```
+
+### [Pages](app/components/pages)
+Business logic via hooks; mounted by Next.js App Router.
+```
+LoginPage.tsx · MarketplacePage.tsx · DocumentUploadPage.tsx
+ExpertValidationPage.tsx · InvestmentDetailPage.tsx
+```
+
+### Reuse Rule
+Search atoms → molecules before creating a new component. Extend via props, never duplicate.
+```
+useAuth() · useMarketplace() · useDocumentUpload() · useCertificationProgress()
+useExpertValidation() · useInvestmentDetail() · usePermissions() · usePolicies()
+useSession() · useApplicationServices()
+```
+
+### Naming Conventions
+
+| Element | Convention | Example |
+|---|---|---|
+| Component files/folders | `PascalCase` | `SMECard.tsx` / `SMECard/` |
+| Page files | `PascalCase` + `Page` suffix | `MarketplacePage.tsx` |
+| Hook files | `camelCase` + `use` prefix | `useMarketplace.ts` |
+| Service files | `PascalCase` + `Service` suffix | `TrustRecordService.ts` |
+| Redux slices | `camelCase` + `Slice` suffix | `marketplaceSlice.ts` |
+| Zod schemas | `camelCase` + `Schema` suffix | `documentUploadSchema.ts` |
+| Type/interface files | `PascalCase` or `camelCase.types.ts` | `session.types.ts` |
+| CSS module files | `camelCase.module.css` | `smeCard.module.css` |
+| Tailwind utilities | Token-based CSS vars only | `text-[var(--qw-navy)]` |
+| Constants | `SCREAMING_SNAKE_CASE` | `MAX_UPLOAD_FILE_SIZE_MB` |
+| DTOs | `PascalCase` + `DTO` suffix | `TrustRecordApplicationDTO` |
+| Enums | `PascalCase` values | `CertificationStatus.PENDING` |
+| Test files | Mirror source path + `.test.ts(x)` / `.spec.ts` | `AuthFacade.test.ts` |
+| i18n keys | `dot.separated.camelCase` | `marketplace.filter.sector` |
+| Non-component folders | `kebab-case` | `app/auth/` |
+
+### [Styles and Design Tokens](app/components/styles)
+
+[tokens.ts](app/components/styles/tokens.ts):
+
+```ts
+export const colors = {
+  primary:    "#0D1F3C",   // QW Navy
+  accent:     "#1AACA8",   // QW Teal
+  gold:       "#C8972B",   // QW Gold
+  background: "#F5F7FA",
+  surface:    "#FFFFFF",
+  slate:      "#4A5568",
+  success:    "#22C55E",
+  warning:    "#F59E0B",
+  error:      "#EF4444",
+};
+export const spacing = { sm: "8px", md: "16px", lg: "24px", xl: "48px" };
+export const radius  = { sm: "4px", md: "8px",  lg: "12px" };
+```
+
+[theme.ts](app/components/styles/theme.ts):
+```ts
+export const theme = {
+  colors,
+  spacing,
+  radius,
+  typography: {
+    fontFamily:    "Inter, sans-serif",
+    monoFamily:    "JetBrains Mono, monospace",
+    headingWeight: 600,
+  },
+};
+```
+
+**Typography:**
+
+| Token | Value | Usage |
+|---|---|---|
+| `--font-display` | `Inter, sans-serif` | H1–H3 |
+| `--font-body` | `Inter, sans-serif` | Body, labels, tables |
+| `--font-mono` | `JetBrains Mono, monospace` | Financial metrics, amounts |
+| Base size | `16px` | Root `rem` |
+
+**Logos:** SVG only. [`app/assets/logo/logo-dark.svg`](app/assets/logo/logo-dark.svg) (white text) and [`logo-light.svg`](app/assets/logo/logo-light.svg) (navy text). Min width: `120px`.
+
+**Iconography:** Lucide React `0.383.0` — named imports only.
+
+**Spacing:** 4-point scale. Cards: `p-4`; inputs: `p-2`; grids: `gap-6`; page horizontal: `px-6 md:px-12 lg:px-24`.
+
+**Branding rules:**
+- Trust certification status: always color + text label (never color alone).
+- Certified: `--qw-gold` + checkmark icon.
+- Pending: `--qw-warning` + clock icon.
+- Rejected: `--qw-error` + X icon.
+
+**Styling rule:**
+```tsx
+// ✅
+<Button className="bg-[var(--color-primary)]" />
+// ❌
+<Button style={{ background: "#0D1F3C" }} />
+```
+
+### Responsive Design
+
+[breakpoints.ts](app/components/styles/breakpoints.ts):
+```ts
+export const breakpoints = { mobile: 480, tablet: 768, desktop: 1200 };
+```
+
+| Device | Marketplace | Investment Detail | Navigation |
+|---|---|---|---|
+| Mobile | 1 column | 1 column | Hamburger |
+| Tablet | 2-column grid | Metrics + charts side-by-side | Collapsed sidebar |
+| Desktop | 3-column grid | Full dual-panel | Full sidebar |
+
+### [Internationalization](app/components/i18n)
+
+Translation files: [en.json](app/components/i18n/en.json) · [es.json](app/components/i18n/es.json)
+
+```tsx
+// ❌
+<h1>Marketplace</h1>
+// ✅
+const { t } = useTranslation();
+<h1>{t("marketplace.title")}</h1>
+```
+
+### Performance
+
+```tsx
+// Lazy loading
+const InvestmentDetailPage = lazy(() => import("@/components/pages/InvestmentDetailPage"));
+<Suspense fallback={<Spinner />}><InvestmentDetailPage /></Suspense>
+
+// Memoization
+export const SMECard = memo(function SMECard({ sme }: SMECardProps) {
+  const formattedGrowth = useMemo(() => formatPercent(sme.growthRate), [sme.growthRate]);
+  const onViewDetails   = useCallback(() => router.push(`/marketplace/${sme.id}`), [sme.id]);
+  return <article onClick={onViewDetails}>...</article>;
+});
+
+// Virtualization (> 100 rows)
+<FixedSizeList height={600} itemCount={smes.length} itemSize={120} width="100%">
+  {({ index, style }) => <SMECard style={style} sme={smes[index]} />}
+</FixedSizeList>
+```
+
+- `next-bundle-analyzer` in CI — chunks > 250 KB fail the pipeline.
+- Lucide React: named imports only (`import { TrendingUp } from "lucide-react"`).
+- Next.js `<Image>` with explicit dimensions for all rasterized assets.
+
+---
+
 ## Authentication and Authorization
 
 # Backend Design
