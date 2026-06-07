@@ -1072,7 +1072,7 @@ jobs:
         env:
           NEXT_PUBLIC_AUTH0_DOMAIN:    ${{ secrets.AUTH0_DOMAIN }}
           NEXT_PUBLIC_AUTH0_CLIENT_ID: ${{ secrets.AUTH0_CLIENT_ID }}
-          NEXT_PUBLIC_API_BASE_URL:    ${{ secrets.VITE_API_BASE_URL }}
+          NEXT_PUBLIC_API_BASE_URL:    ${{ secrets.NEXT_PUBLIC_API_BASE_URL }}
       - uses: actions/upload-artifact@v4
         with: { name: node-app, path: .next/ }
 
@@ -1096,9 +1096,9 @@ jobs:
 
 ### Secrets
 
-**QA:** `AZUREAPPSERVICE_CLIENTID_QA_FRONTEND` · `AZUREAPPSERVICE_TENANTID_QA` · `AZUREAPPSERVICE_SUBSCRIPTIONID_QA` · `AUTH0_DOMAIN` · `AUTH0_CLIENT_ID` · `VITE_API_BASE_URL`
+**QA:** `AZUREAPPSERVICE_CLIENTID_QA_FRONTEND` · `AZUREAPPSERVICE_TENANTID_QA` · `AZUREAPPSERVICE_SUBSCRIPTIONID_QA` · `AUTH0_DOMAIN` · `AUTH0_CLIENT_ID` · `NEXT_PUBLIC_API_BASE_URL`
 
-**Production:** `AZUREAPPSERVICE_CLIENTID_PROD_FRONTEND` · `AZUREAPPSERVICE_TENANTID_PROD` · `AZUREAPPSERVICE_SUBSCRIPTIONID_PROD` · `AUTH0_DOMAIN` · `AUTH0_CLIENT_ID` · `VITE_API_BASE_URL_PROD`
+**Production:** `AZUREAPPSERVICE_CLIENTID_PROD_FRONTEND` · `AZUREAPPSERVICE_TENANTID_PROD` · `AZUREAPPSERVICE_SUBSCRIPTIONID_PROD` · `AUTH0_DOMAIN` · `AUTH0_CLIENT_ID` · `NEXT_PUBLIC_API_BASE_URL_PROD`
 
 ### OIDC Setup (`infra/setup-github-oidc.ps1`)
 Run once per environment. For each (frontend, api) × (qa, prod):
@@ -1133,7 +1133,7 @@ Run once per environment. For each (frontend, api) × (qa, prod):
 | Frontend Web App | `qaquietwealth-frontend` (Node 24 LTS) | `prodquietwealth-frontend` |
 | API Web App | `qaquietwealth-api` (DOTNETCORE 10.0) | `prodquietwealth-api` |
 
-Secrets (`AUTH0_*`, `Supabase__Url`, `Supabase__ServiceKey`) via `.bicepparam` `readEnvironmentVariable()`. Infra deployment is manual only — secrets never stored in GitHub Actions.
+Secrets (`AUTH0_*`, `ConnectionStrings__QuietWealthSql`, `BlobStorage__ConnectionString`, `NotificationHub__ConnectionString`) via `.bicepparam` `readEnvironmentVariable()`. Infra deployment is manual only — secrets never stored in GitHub Actions.
 
 ---
 
@@ -1258,24 +1258,27 @@ classDiagram
 - Asynchronous operations and notifications: Azure Notification Hubs
 - Load balancing: no dedicated load balancer required for the expected traffic profile
 - Backend framework and language: .NET SDK 10.0.102, ASP.NET Core
-- Repository structure: monorepo shared with the frontend; backend folder: (AGREGAR) ``
+- Repository structure: monorepo shared with the frontend; backend folder: [`server/QuietWealth.Backend`](/server/QuietWealth.Backend) (AGREGAR si cambia la estructura final)
 - Testing: xUnit for unit and integration tests
 - API documentation tooling: Swagger / OpenAPI tooling for contract publication and validation
 - Code quality: `dotnet format` and built-in .NET analyzers
-- Services (CAMBIAR):
-  - Authentication service
-  - Document upload service
-  - DUA generation orchestration service
-  - Notification service
-  - Result download service
+- Services:
+  - Identity access service
+  - Document intake service
+  - Certification validation service
+  - Marketplace read service
+  - Audit observability service
+  - Retention archival service
+  - <<Agregar otros servicios si el MVP los requiere>>
 
 ## Security
 - Transport security: HTTPS enforced at Azure API Management for all public endpoints
 - Authentication:
-  - Username, password, and OTP are validated server-side
-  - After successful credential and OTP validation, the backend issues JWT bearer tokens
+  - Users authenticate through Auth0 Universal Login federated with Microsoft Entra ID
+  - The backend validates JWT bearer tokens issued for the configured Auth0 audience
   - JWT signing algorithm: RS256
   - JWT tokens are required for all protected endpoints
+  - Client secrets are never embedded in JWTs or returned to the browser
 - Encryption at rest:
   - Azure SQL Database uses Transparent Data Encryption (TDE) with service-managed keys
   - Reference: https://learn.microsoft.com/en-us/azure/azure-sql/database/security-overview?view=azuresql#transparent-data-encryption-encryption-at-rest-with-service-managed-keys
@@ -1299,18 +1302,17 @@ classDiagram
   - AuthLoginRequested
   - AuthLoginSucceeded
   - AuthLoginFailed
-  - OtpValidationSucceeded
-  - OtpValidationFailed
   - UserLoggedOut
   - FileUploadStarted
   - FileUploadCompleted
   - FileUploadRejected
   - SupportedFilesValidated
-  - <<Agregar otros>>
-  - <<Agregar otros>>
-  - <<Agregar otros>>
-  - <<Agregar otros>>
-  - <<Agregar otros>>
+  - CertificationReviewRequested
+  - CertificationApproved
+  - CertificationRejected
+  - MarketplaceListingViewed
+  - RecordsArchived
+  - <<Agregar otros eventos de negocio>>
   - ApiRequestFailed
   - UnhandledExceptionCaptured
 - Progress polling guideline: do not log every frontend polling request; log only meaningful status transitions and exceptional progress-check failures
@@ -1329,16 +1331,16 @@ classDiagram
 - SLIs defined from design: availability and latency SLIs must be defined at architecture stage for each critical user flow.
 
 ## Infrastructure (DevOps)
-<<Falta agregar los scripts de provisioning para ci cd>>
-<<Podemos agregar las reglas que va a tener el github para branching y demás>>
+<<Falta validar scripts finales de provisioning para CI/CD>>
+<<Podemos agregar reglas definitivas de branching y protección de ramas>>
 
 ### CI/CD orchestration tool
-- Standard tool: **Azure DevOps Pipelines** (single CI/CD control plane from this monorepo).
-- Rationale: repository-native workflows, PR checks, environments, approvals, and strong Azure integration.
+- Standard tool: **GitHub Actions** (single CI/CD control plane from this monorepo).
+- Rationale: repository-native workflows, PR checks, environments, approvals, and OIDC-based Azure deployment.
 
 ### Infrastructure as Code (IaC)
-- Standard tool: **Terraform** for provisioning and updates across environments.
-- Managed resources via Terraform:
+- Standard tool: **Bicep** for provisioning and updates across environments.
+- Managed resources via Bicep:
 - Azure API Management
 - Azure App Service (API hosting)
 - Azure SQL Database
@@ -1359,7 +1361,7 @@ classDiagram
 - `ci-frontend`: install, lint, test, build frontend.
 - `ci-backend`: restore, build, test backend (.NET), run static analysis/format checks.
 - `security-scan`: dependency/license checks and secret scanning.
-- `infra-plan`: `terraform fmt` + `terraform validate` + `terraform plan` per environment.
+- `infra-plan`: `bicep build` + `az deployment what-if` per environment.
 - `deploy-dev` / `deploy-stage` / `deploy-prod`: apply infra changes (as approved) and deploy application artifacts.
 
 ### Governance and quality gates
@@ -1369,8 +1371,8 @@ classDiagram
 - Artifact/version traceability required per deployment (commit SHA, build ID, release timestamp).
 
 ## Availability
-<<No creo que necesitemos 4 nueves, creo que podemos bajarlo a 3>>
-99.99% uptime = 0.01% downtime per year = 52.56 minutes/year (≈ 0.876 hours/year)
+Target availability: **99.9%** for the MVP and course demo scope. Higher availability targets require multi-region APIM, zone-redundant App Service, and zone-redundant SQL.
+<<Validar con el profesor si 99.9% es suficiente para el alcance del curso>>
 
 ### Resilience patterns (required)
 - Circuit breaker per downstream dependency (SQL, Blob, Notification Hubs, external APIs) to fail fast when an integration is unhealthy and protect API latency.
@@ -1386,8 +1388,8 @@ With the most recent official SLA (April 8, 2026) for your stack:
 
 |Component	| SLA | Maximum theoretical downtime/year|
 |-----------|-----|--------------------------|
-|Azure API Management |	99.99% (Premium multi-region)	| 4.38 h / 0.876 h|
-|Azure App Service	| 99.99% (with 2+ AZ) | 4.38 h / 0.876 h|
+|Azure API Management |	99.99% (Premium multi-region)	| 0.876 h|
+|Azure App Service	| 99.99% (with 2+ AZ) | 0.876 h|
 |Azure SQL Database	| 99.99% (no zone-redundant) / 99.995% (zone-redundant)	| 0.876 h / 0.438 h|
 |Azure Blob Storage	| 99.9% write hot; 99.99% read RA-GRS/RA-GZRS (depends on tier/redundancy) | 8.76 h / 0.876 h|
 |Azure Notification Hubs | 99.9% | 8.76 h|
@@ -1411,15 +1413,15 @@ With the most recent official SLA (April 8, 2026) for your stack:
 ## Backend key workflows
 
 ### User authentication and session validation
-1. The frontend sends credentials to [`IdentityAccessController`](/server/QuietWealth.Backend/domains/identity-access/controllers/IdentityAccessController.cs).
-2. The backend validates the [`LoginRequest`](/server/QuietWealth.Backend/domains/identity-access/models/LoginRequest.cs).
-3. `IdentityAccessService` validates credentials, permissions, and session state.
-4. The backend creates a session through [`IUserSessionRepository`](/server/QuietWealth.Backend/domains/identity-access/repositories/IUserSessionRepository.cs).
-5. The backend returns a `LoginResponse` with JWT, user summary, roles, permissions, and expiration.
-6. Protected endpoints validate the JWT before running business logic.
-7. Logout invalidates the session and emits `UserLoggedOut`.
+1. The user authenticates through Auth0 Universal Login federated with Microsoft Entra ID.
+2. Auth0 completes the Authorization Code + PKCE flow and returns tokens to the configured QuietWealth callback.
+3. The frontend sends the Auth0 access token as a Bearer token to protected backend endpoints.
+4. `IdentityAccessService` validates issuer, audience, signature, expiration, roles, permissions, and session state.
+5. The backend creates or refreshes session metadata through [`IUserSessionRepository`](/server/QuietWealth.Backend/domains/identity-access/repositories/IUserSessionRepository.cs).
+6. Protected endpoints validate the JWT and permission policies before running business logic.
+7. Logout clears the local session, delegates logout to Auth0, and emits `UserLoggedOut`.
 
-Errors: `401 Unauthorized` for invalid credentials, `403 Forbidden` for missing permissions, expired tokens redirect the user to login.
+Errors: `401 Unauthorized` for invalid or expired tokens, `403 Forbidden` for missing permissions, Auth0 callback failures return the user to the login screen.
 
 ---
 
@@ -1522,7 +1524,7 @@ flowchart TD
         SME["SME User"]
         INV["Investor"]
         FEX["Financial Expert"]
-        SPA["React SPA · Vite · TypeScript · Tailwind"]
+        SPA["Next.js SSR · React · TypeScript · Tailwind"]
     end
 
     subgraph L2["② API Layer"]
@@ -1612,7 +1614,7 @@ flowchart TD
 
 | # | Layer | Responsibility |
 |---|-------|---------------|
-| 1 | **Client / Delivery** | User-facing React SPA; presents UI to SMEs, Investors, and Financial Experts. |
+| 1 | **Client / Delivery** | User-facing Next.js SSR web app; presents UI to SMEs, Investors, and Financial Experts. |
 | 2 | **API** | ASP.NET Core controllers expose REST endpoints; DTOs shape request/response contracts; OpenAPI documents the surface. |
 | 3 | **Middleware / Cross-Cutting** | Intercepts every request for auth, authorization, error normalization, correlation tracking, and telemetry. |
 | 4 | **Domain Services** | Orchestrates business use-cases (identity, document intake, certification, marketplace reads, audit, retention). |
@@ -1661,14 +1663,18 @@ flowchart TD
   - [`server/QuietWealth.Backend/domains/identity-access/`](/server/QuietWealth.Backend/domains/identity-access)
   - [`server/QuietWealth.Backend/domains/document-intake/`](/server/QuietWealth.Backend/domains/document-intake)
   - [`server/QuietWealth.Backend/domains/retention-archival/`](/server/QuietWealth.Backend/domains/retention-archival)
-  - <<Agregar otros>>
+  - [`server/QuietWealth.Backend/domains/audit-observability/`](/server/QuietWealth.Backend/domains/audit-observability)
+  - <<Agregar otros dominios si se implementan>>
 
 ### ACL policy for cross-domain communication
 - All cross-domain calls must go through the ACL layer in [`server/QuietWealth.Backend/acls/`](/server/QuietWealth.Backend/acls).
 - No domain is allowed to reference another domain's `repositories/` or `services/` directly.
 - ACLs must expose explicit translator/adaptor contracts between domains (anti-corruption boundary).
 - Suggested ACL modules:
-  - <<Agregar otros>>
+  - `document-intake-to-certification-validation`
+  - `certification-validation-to-marketplace`
+  - `all-domains-to-audit-observability`
+  - <<Agregar otros ACLs si aparecen dependencias cross-domain>>
 
 
 ### CI/CD and IaC source folders
@@ -1705,7 +1711,7 @@ AZUREAPPSERVICE_CLIENTID_QA_FRONTEND
 AZUREAPPSERVICE_CLIENTID_QA_API
 AZUREAPPSERVICE_TENANTID_QA
 AZUREAPPSERVICE_SUBSCRIPTIONID_QA
-VITE_API_BASE_URL                    ← build-time only, frontend
+NEXT_PUBLIC_API_BASE_URL             ← build-time only, frontend
 ```
 
 **Production environment:**
@@ -1714,10 +1720,10 @@ AZUREAPPSERVICE_CLIENTID_PROD_FRONTEND
 AZUREAPPSERVICE_CLIENTID_PROD_API
 AZUREAPPSERVICE_TENANTID_PROD
 AZUREAPPSERVICE_SUBSCRIPTIONID_PROD
-VITE_API_BASE_URL_PROD               ← build-time only, frontend
+NEXT_PUBLIC_API_BASE_URL_PROD        ← build-time only, frontend
 ```
 
-`VITE_API_BASE_URL*` is injected as `env:` on the `npm run build` step — baked into the static bundle at build time. It is **not** an Azure app setting.
+`NEXT_PUBLIC_API_BASE_URL*` is injected as `env:` on the `npm run build` step — baked into the Next.js bundle at build time. It is **not** an Azure app setting.
 
 **Azure login step:**
 ```yaml
@@ -1759,8 +1765,9 @@ Each Web App has its own Entra app registration and `clientId`. `tenantId` and `
 **API app settings provisioned by Bicep:**
 ```
 ASPNETCORE_ENVIRONMENT    = "Production" (prod) | "Development" (qa — enables Swagger)
-Supabase__Url             = <from SUPABASE_URL env var>
-Supabase__ServiceKey      = <from SUPABASE_SERVICE_KEY env var>
+ConnectionStrings__QuietWealthSql = <from AZURE_SQL_CONNECTION_STRING env var>
+BlobStorage__ConnectionString     = <from AZURE_BLOB_CONNECTION_STRING env var>
+NotificationHub__ConnectionString = <from AZURE_NOTIFICATION_HUB_CONNECTION_STRING env var>
 AllowedOrigins__0         = https://{frontendAppName}.azurewebsites.net
 WEBSITE_RUN_FROM_PACKAGE  = 1
 ```
@@ -1784,14 +1791,16 @@ SCM_DO_BUILD_DURING_DEPLOYMENT = false   ← disables Oryx; we ship pre-built /d
 
 **Secrets flow into Bicep via `.bicepparam`:**
 ```bicep
-param supabaseUrl        = readEnvironmentVariable('SUPABASE_URL', '')
-param supabaseServiceKey = readEnvironmentVariable('SUPABASE_SERVICE_KEY', '')
+param sqlConnectionString             = readEnvironmentVariable('AZURE_SQL_CONNECTION_STRING', '')
+param blobStorageConnectionString     = readEnvironmentVariable('AZURE_BLOB_CONNECTION_STRING', '')
+param notificationHubConnectionString = readEnvironmentVariable('AZURE_NOTIFICATION_HUB_CONNECTION_STRING', '')
 ```
 
 Set before running `deploy.ps1`:
 ```powershell
-$env:SUPABASE_URL         = '...'
-$env:SUPABASE_SERVICE_KEY = '...'
+$env:AZURE_SQL_CONNECTION_STRING = '...'
+$env:AZURE_BLOB_CONNECTION_STRING = '...'
+$env:AZURE_NOTIFICATION_HUB_CONNECTION_STRING = '...'
 .\deploy.ps1 -Environment qa   # or prod
 ```
 
@@ -1821,8 +1830,8 @@ Artifact is passed between jobs via `actions/upload-artifact` / `actions/downloa
 
 - Each Web App has its **own** Entra app registration and `clientId` — do not share across frontend/API
 - `id-token: write` must be on the **deploy job**, not the build job
-- `VITE_*` vars are build-time secrets, not runtime app settings — must be in the build job's `env:` block
-- `Supabase__Url` / `Supabase__ServiceKey` use ASP.NET Core's double-underscore config convention (maps to `Supabase:Url` / `Supabase:ServiceKey`)
+- `NEXT_PUBLIC_*` vars are build-time settings, not runtime app settings — must be in the build job's `env:` block
+- `ConnectionStrings__QuietWealthSql`, `BlobStorage__ConnectionString`, and `NotificationHub__ConnectionString` use ASP.NET Core's double-underscore config convention
 - Bicep `@secure()` params never appear in deployment logs
 
 
@@ -1861,23 +1870,328 @@ Artifact is passed between jobs via `actions/upload-artifact` / `actions/downloa
 
 # Data Design
 
+## Database engine
+QuietWealth uses **Azure SQL Database** as the primary relational data store. The system data is structured, transactional, and strongly related across users, SME profiles, document batches, certifications, marketplace metrics, audit records, and retention metadata.
+
+Azure Blob Storage is used only for file bytes and archived artifacts. SQL stores file metadata, blob paths, checksums, lifecycle state, and audit linkage.
+
+## Core entities
+| Entity | Purpose | Backend reference |
+|---|---|---|
+| `UserSession` | Stores active backend session metadata and authorization context. | [`UserSession.cs`](/server/QuietWealth.Backend/domains/identity-access/models/UserSession.cs) |
+| `AccessPolicy` | Defines permission requirements for protected backend actions. | [`AccessPolicy.cs`](/server/QuietWealth.Backend/domains/identity-access/models/AccessPolicy.cs) |
+| `SMEProfile` | Represents the SME visible to experts and investors. | Planned marketplace/certification model |
+| `DocumentBatch` | Groups financial documents uploaded by an SME. | [`DocumentBatch.cs`](/server/QuietWealth.Backend/domains/document-intake/models/DocumentBatch.cs) |
+| `SourceDocument` | Stores metadata for each uploaded file. | [`SourceDocument.cs`](/server/QuietWealth.Backend/domains/document-intake/models/SourceDocument.cs) |
+| `CertificationReview` | Records expert decisions and trust level assignment. | Planned certification model |
+| `MarketplaceListing` | Denormalized read model for certified SME cards and filtering. | Planned marketplace model |
+| `InvestmentMetric` | Stores financial and marketplace metrics over time for investment detail charts. | Planned marketplace model |
+| `AuditEntry` | Stores business and operational audit events. | [`AuditEntry.cs`](/server/QuietWealth.Backend/domains/audit-observability/models/AuditEntry.cs) |
+| `RetentionRecord` | Tracks active/archive lifecycle for files and records. | [`RetentionRecord.cs`](/server/QuietWealth.Backend/domains/retention-archival/models/RetentionRecord.cs) |
+| `OutboxMessage` | Stores pending domain events before asynchronous publication. | [`OutboxMessage.cs`](/server/QuietWealth.Backend/shared/Infrastructure/OutboxMessage.cs) |
+
+## Entity relationship model
+```mermaid
+erDiagram
+  USER_SESSION {
+    uniqueidentifier session_id PK
+    uniqueidentifier user_id
+    nvarchar username
+    nvarchar jwt_token_hash
+    datetimeoffset expires_at_utc
+  }
+
+  ACCESS_POLICY {
+    uniqueidentifier access_policy_id PK
+    nvarchar policy_name
+    nvarchar required_permissions_json
+  }
+
+  SME_PROFILE {
+    uniqueidentifier sme_profile_id PK
+    uniqueidentifier owner_user_id
+    nvarchar company_name
+    nvarchar sector
+    nvarchar certification_status
+    decimal trust_level
+  }
+
+  DOCUMENT_BATCH {
+    uniqueidentifier document_batch_id PK
+    uniqueidentifier sme_profile_id FK
+    uniqueidentifier owner_user_id
+    nvarchar status
+    datetimeoffset created_at_utc
+  }
+
+  SOURCE_DOCUMENT {
+    uniqueidentifier source_document_id PK
+    uniqueidentifier document_batch_id FK
+    nvarchar file_name
+    nvarchar content_type
+    nvarchar upload_status
+    nvarchar blob_path
+    nvarchar checksum
+  }
+
+  CERTIFICATION_REVIEW {
+    uniqueidentifier certification_review_id PK
+    uniqueidentifier document_batch_id FK
+    uniqueidentifier reviewer_user_id
+    nvarchar decision
+    decimal trust_level
+    nvarchar notes
+    datetimeoffset decided_at_utc
+  }
+
+  INVESTMENT_METRIC {
+    uniqueidentifier investment_metric_id PK
+    uniqueidentifier sme_profile_id FK
+    date metric_date
+    decimal monthly_recurring_revenue
+    decimal retention_rate
+    decimal profit_margin
+    decimal growth_rate
+    decimal average_roi
+    decimal raised_capital
+    decimal accumulated_capital
+    int active_investors
+  }
+
+  MARKETPLACE_LISTING {
+    uniqueidentifier marketplace_listing_id PK
+    uniqueidentifier sme_profile_id FK
+    nvarchar company_name
+    nvarchar sector
+    nvarchar certification_status
+    decimal trust_level
+    decimal growth_rate
+    decimal raised_capital
+    int active_investors
+    datetimeoffset last_refreshed_at_utc
+  }
+
+  AUDIT_ENTRY {
+    uniqueidentifier audit_entry_id PK
+    nvarchar event_name
+    nvarchar correlation_id
+    uniqueidentifier actor_user_id
+    nvarchar aggregate_type
+    uniqueidentifier aggregate_id
+    datetimeoffset occurred_at_utc
+  }
+
+  RETENTION_RECORD {
+    uniqueidentifier retention_record_id PK
+    nvarchar artifact_type
+    uniqueidentifier artifact_id
+    nvarchar storage_tier
+    nvarchar lifecycle_status
+    boolean legal_hold
+    nvarchar archive_path
+    datetimeoffset retained_until_utc
+    datetimeoffset archived_at_utc
+  }
+
+  OUTBOX_MESSAGE {
+    uniqueidentifier outbox_message_id PK
+    nvarchar event_name
+    nvarchar aggregate_type
+    uniqueidentifier aggregate_id
+    nvarchar payload_json
+    nvarchar status
+    int retry_count
+    datetimeoffset created_at_utc
+    datetimeoffset published_at_utc
+  }
+
+  SME_PROFILE ||--o{ DOCUMENT_BATCH : owns
+  DOCUMENT_BATCH ||--o{ SOURCE_DOCUMENT : contains
+  DOCUMENT_BATCH ||--o{ CERTIFICATION_REVIEW : reviewed_by
+  SME_PROFILE ||--o{ INVESTMENT_METRIC : has
+  SME_PROFILE ||--o{ MARKETPLACE_LISTING : appears_as
+  SME_PROFILE ||--o{ AUDIT_ENTRY : audited_as
+  DOCUMENT_BATCH ||--o{ AUDIT_ENTRY : audited_as
+  SOURCE_DOCUMENT ||--o{ RETENTION_RECORD : archived_as
+  SME_PROFILE ||--o{ OUTBOX_MESSAGE : emits
+```
+
+## DBML specification
+```dbml
+Table user_sessions {
+  session_id uniqueidentifier [pk]
+  user_id uniqueidentifier [not null]
+  username nvarchar(160) [not null]
+  roles_json nvarchar(max) [not null]
+  permissions_json nvarchar(max) [not null]
+  jwt_token_hash nvarchar(256) [not null]
+  expires_at_utc datetimeoffset [not null]
+}
+
+Table access_policies {
+  access_policy_id uniqueidentifier [pk]
+  policy_name nvarchar(120) [not null, unique]
+  required_permissions_json nvarchar(max) [not null]
+}
+
+Table sme_profiles {
+  sme_profile_id uniqueidentifier [pk]
+  owner_user_id uniqueidentifier [not null]
+  company_name nvarchar(200) [not null]
+  sector nvarchar(120) [not null]
+  certification_status nvarchar(40) [not null]
+  trust_level decimal(5,2)
+  created_at_utc datetimeoffset [not null]
+}
+
+Table document_batches {
+  document_batch_id uniqueidentifier [pk]
+  sme_profile_id uniqueidentifier [not null, ref: > sme_profiles.sme_profile_id]
+  owner_user_id uniqueidentifier [not null]
+  status nvarchar(40) [not null]
+  created_at_utc datetimeoffset [not null]
+}
+
+Table source_documents {
+  source_document_id uniqueidentifier [pk]
+  document_batch_id uniqueidentifier [not null, ref: > document_batches.document_batch_id]
+  file_name nvarchar(260) [not null]
+  content_type nvarchar(120) [not null]
+  upload_status nvarchar(40) [not null]
+  blob_path nvarchar(500)
+  checksum nvarchar(128)
+}
+
+Table certification_reviews {
+  certification_review_id uniqueidentifier [pk]
+  document_batch_id uniqueidentifier [not null, ref: > document_batches.document_batch_id]
+  reviewer_user_id uniqueidentifier [not null]
+  decision nvarchar(40) [not null]
+  trust_level decimal(5,2)
+  notes nvarchar(1000)
+  decided_at_utc datetimeoffset [not null]
+}
+
+Table investment_metrics {
+  investment_metric_id uniqueidentifier [pk]
+  sme_profile_id uniqueidentifier [not null, ref: > sme_profiles.sme_profile_id]
+  metric_date date [not null]
+  monthly_recurring_revenue decimal(18,2)
+  retention_rate decimal(8,2)
+  profit_margin decimal(8,2)
+  growth_rate decimal(8,2)
+  average_roi decimal(8,2)
+  raised_capital decimal(18,2)
+  accumulated_capital decimal(18,2)
+  active_investors int
+
+  indexes {
+    (sme_profile_id, metric_date) [unique]
+  }
+}
+
+Table marketplace_listings {
+  marketplace_listing_id uniqueidentifier [pk]
+  sme_profile_id uniqueidentifier [not null, ref: > sme_profiles.sme_profile_id]
+  company_name nvarchar(200) [not null]
+  sector nvarchar(120) [not null]
+  certification_status nvarchar(40) [not null]
+  trust_level decimal(5,2)
+  growth_rate decimal(8,2)
+  raised_capital decimal(18,2)
+  active_investors int
+  last_refreshed_at_utc datetimeoffset [not null]
+
+  indexes {
+    sme_profile_id [unique]
+    (sector, certification_status)
+    trust_level
+  }
+}
+
+Table audit_entries {
+  audit_entry_id uniqueidentifier [pk]
+  event_name nvarchar(160) [not null]
+  correlation_id nvarchar(120) [not null]
+  actor_user_id uniqueidentifier
+  aggregate_type nvarchar(120)
+  aggregate_id uniqueidentifier
+  occurred_at_utc datetimeoffset [not null]
+}
+
+Table retention_records {
+  retention_record_id uniqueidentifier [pk]
+  artifact_type nvarchar(80) [not null]
+  artifact_id uniqueidentifier [not null]
+  storage_tier nvarchar(40) [not null]
+  lifecycle_status nvarchar(40) [not null]
+  legal_hold bit [not null, default: 0]
+  archive_path nvarchar(500)
+  retained_until_utc datetimeoffset
+  archived_at_utc datetimeoffset
+
+  indexes {
+    (artifact_type, artifact_id)
+    lifecycle_status
+    legal_hold
+  }
+}
+
+Table outbox_messages {
+  outbox_message_id uniqueidentifier [pk]
+  event_name nvarchar(160) [not null]
+  aggregate_type nvarchar(120) [not null]
+  aggregate_id uniqueidentifier [not null]
+  payload_json nvarchar(max) [not null]
+  status nvarchar(40) [not null]
+  retry_count int [not null, default: 0]
+  created_at_utc datetimeoffset [not null]
+  published_at_utc datetimeoffset
+
+  indexes {
+    (status, created_at_utc)
+    (aggregate_type, aggregate_id)
+  }
+}
+```
+
+## Polymorphic references
+`audit_entries.aggregate_type + aggregate_id`, `retention_records.artifact_type + artifact_id`, and `outbox_messages.aggregate_type + aggregate_id` are polymorphic references. They intentionally do not use physical foreign keys because they can point to records from multiple bounded contexts. Referential integrity is enforced in domain services and covered by repository tests.
+
+## Data integrity rules
+- A `SourceDocument` cannot be marked as `uploaded` without `blob_path` and `checksum`; rejected files keep `upload_status = rejected`.
+- A `DocumentBatch` can move to review only when at least one valid `SourceDocument` exists.
+- A `CertificationReview` can be created only for an existing `DocumentBatch`.
+- Only SMEs with approved certification can appear in `MarketplaceListing`.
+- `AuditEntry` records are append-only.
+- `RetentionRecord` operations must be idempotent and preserve original artifact linkage, storage tier, retention date, and `legal_hold` state.
+- `OutboxMessage` records move from `pending` to `published` only after successful asynchronous publication.
+
+## Creation, migration, and seed strategy
+- Creation scripts live under `server/deploy/sql/create/`.
+- Seed scripts live under `server/deploy/sql/seed/`.
+- Migration scripts live under `server/deploy/sql/migrations/` and use timestamped names such as `20260607_add_certification_reviews.sql`.
+- Rollback scripts live under `server/deploy/sql/rollback/` and use the same timestamp prefix as the migration they revert.
+- MVP seed data includes sample SME profiles, certified marketplace listings, document batches, source documents, investment metrics, access policies, and audit events.
+
+## Database review agents and automated checks
+| Agent/check | Responsibility |
+|---|---|
+| DB design reviewer | Checks table names, relationships, required indexes, and normalization. |
+| Security reviewer | Checks sensitive fields, auditability, retention state, and secret handling. |
+| Migration reviewer | Checks that every schema change has a forward migration, rollback script, and seed impact note. |
+| Architecture validator | Checks that repository contracts match the documented data model and domain boundaries. |
+
+## Data security
+- Azure SQL uses Transparent Data Encryption at rest.
+- Blob artifacts use private containers and are accessed through backend-controlled paths or short-lived signed URLs.
+- JWT values are never stored as raw tokens; only hashes or session references are persisted.
+- Audit tables are append-only and include correlation ids for traceability.
+- Secrets are stored in environment variables locally and Azure/GitHub secrets for deployed environments.
+- Production backups follow Azure SQL automated backup policy with point-in-time restore enabled.
+- Archived files keep immutable linkage to their source document, SME profile, and audit trail.
+
 # Auth
-
-## Recomendaciones Rodri
-- Definir qué contenidos va a tener el JWT
-- Ver lo del HTTPS required
-- Client ID and Client Secret irían dentro del jwt
-- Cuánto de expiración al token
-- Cuánto al refresh
-- CSRF donde ponerlo, qué es?
-- Qué vamos a hacer con esos casos que puede tardar hasta 5 segundos para auth? Progress bar o label para indicar al usuario
-- Soporta thousands concurrent pero cuántos necesita mi app? Ver cuántos esperamos y ver si están bajo el treshold estamos bien
-- El jwt probablemente no pase de 10 kb pero hay que definir lo que lleva
-- Cuantificar cuantas autenticaciones en el horario establecido
-- Quitar la hablada innecesaria
-- Aterrizar bien el workflow
-
----
 
 ## Integration Spec
 
@@ -1899,7 +2213,8 @@ Integrated Identity Providers:
 - Session validation in backend
 - HTTPS required for all authentication traffic
 - MFA support available through Auth0
-- Client ID and Client Secret required
+- Client ID is public frontend configuration
+- Client Secret is backend-only configuration and is never stored in JWT claims
 - Token expiration validation
 - Refresh token rotation
 - CSRF protection using state parameter
@@ -1925,11 +2240,12 @@ Expected integration characteristics:
 - Average authentication response time: 1–5 seconds
 - JWT payload size: below 10 KB
 - Support for thousands of concurrent authentication requests
+- Expected daily users for MVP validation: XXX
 
 Potential bottleneck:
 Large concurrent login spikes during business hours for SME users accessing financial trust records.
 
-No mitigation necessary since we expect XXX users daily and are not expecting thousands of concurrent auth requests. JSON payloads will have a size of XX KB which is handled easily by Auth0.
+No additional mitigation is required for the MVP because the expected course-demo workload is small and JWT payloads remain below the documented 10 KB threshold.
 
 ### Workload
 
@@ -1955,11 +2271,11 @@ Authentication Flow:
 2. Frontend redirects user to Auth0 Universal Login
 3. Auth0 federates authentication with Microsoft
 4. Identity provider authenticates the user
-5. Auth0 returns authorization code to QuietWealth backend
-6. Backend exchanges authorization code for tokens
-7. Backend validates JWT and ID Token
-8. User profile is created or updated internally
-9. Internal JWT session is generated
+5. Auth0 returns the authorization code to the configured QuietWealth callback
+6. Auth0 SDK completes the PKCE token exchange and obtains the access token and ID token
+7. Frontend sends the access token as a Bearer token to the backend
+8. Backend validates issuer, audience, signature, expiration, roles, and permissions
+9. User profile and session metadata are created or updated internally
 10. User gains access to the SME financial trust platform
 
 ### Object-Oriented Design Patterns Required
