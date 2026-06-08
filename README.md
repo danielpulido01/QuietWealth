@@ -253,15 +253,26 @@ Rel(services, infrastructure, "Uses logger, settings, HTTP client")
 Rel(domain, infrastructure, "Uses shared types only")
 ```
 
-### Dependency Rules
+### Layer Dependency Rules
 
-| Rule                                                 | Correct                                                             | Incorrect                           |
-| ---------------------------------------------------- | ------------------------------------------------------------------- | ----------------------------------- |
-| Components must not call backend services directly   | `DocumentUploadPage` → `useDocumentUpload()` → `TrustRecordService` | `DocumentUploadPage` → `fetch()`    |
-| Components must not check roles directly             | `hasAccess("canCertifySME")`                                        | `user.role === "financial_analyst"` |
-| API responses must be validated before state updates | `TrustRecordService` → Zod schema → Redux action                    | API response → Redux state directly |
-| Auth logic must be centralized                       | `AuthFacade.login()`                                                | Auth0 SDK call inside a page        |
-| Errors must be handled centrally                     | `ExceptionHandler.handle(error)`                                    | `console.log(error)` in components  |
+```text
+UI Components
+      ↓
+Feature Hooks
+      ↓
+Application Services
+      ↓
+Infrastructure
+```
+
+Rules:
+
+- Components never call services directly.
+- Components never access Redux slices directly.
+- Hooks orchestrate business workflows.
+- Services own API communication.
+- Infrastructure owns external integrations.
+```
 
 ### Example: Login Flow
 
@@ -315,96 +326,64 @@ Rel(qw, appInsights, "Sends telemetry to")
 
 ```mermaid
 C4Container
-title QuietWealth - Container Diagram
+    title QuietWealth Frontend Ecosystem
 
-Person(smeOwner, "SME Owner", "Uploads financial documents")
-Person(financialAnalyst, "Financial Analyst", "Certifies SME applications")
-Person(investor, "Investor", "Browses certified SMEs")
-Person(sysAdmin, "System Administrator", "Manages platform configuration")
+    Person(user, "Investor / SME / Expert")
 
-System_Ext(auth0, "Auth0", "Identity broker")
-System_Ext(entra, "Microsoft Entra ID", "Corporate identity provider")
+    Container(frontend, "QuietWealth Frontend", "Next.js 15 + React 19", "SSR web application")
 
-System_Boundary(qw, "QuietWealth") {
-  Container(frontend, "Frontend Web App", "Next.js 15, React 19, Node.js 22", "SSR web application for marketplace, document upload, validation panel, and investment details")
-  Container(apiGateway, "API Gateway", "Azure API Management", "Central entry point for backend APIs, rate limits, and request policies")
-  Container(backendApi, "Backend API", "ASP.NET Core / .NET", "Trust record, document intake, validation, marketplace, and investment APIs")
-  ContainerDb(sqlDb, "Azure SQL Database", "Relational Database", "Stores users, roles, SMEs, trust records, certification states, and audit references")
-  Container(blobStorage, "Azure Blob Storage", "Object Storage", "Stores uploaded financial documents")
-  Container(queue, "Azure Service Bus", "Message Broker", "Coordinates asynchronous document processing and certification workflows")
-  Container(notifications, "Notification Service", "Azure Notification Hubs / Email Provider", "Notifies users about certification status changes")
-  Container(appInsights, "Application Insights", "Monitoring", "Collects frontend and backend logs, metrics, traces, and alerts")
-  Container(keyVault, "Azure Key Vault", "Secrets Management", "Stores Auth0 secrets, API keys, and sensitive configuration")
-}
+    Container(api, "QuietWealth API", ".NET", "Business services and data access")
 
-Rel(smeOwner, frontend, "Uploads documents and tracks status", "HTTPS")
-Rel(financialAnalyst, frontend, "Reviews certification queue", "HTTPS")
-Rel(investor, frontend, "Browses marketplace and details", "HTTPS")
-Rel(sysAdmin, frontend, "Manages configuration", "HTTPS")
+    System_Ext(auth0, "Auth0", "OIDC authentication")
 
-Rel(frontend, auth0, "Authenticates users", "OIDC / OAuth 2.0 PKCE")
-Rel(auth0, entra, "Federates authentication")
-Rel(frontend, apiGateway, "Calls protected APIs", "HTTPS / REST / Bearer JWT")
-Rel(apiGateway, backendApi, "Routes API requests", "HTTPS")
-Rel(backendApi, sqlDb, "Reads and writes business data")
-Rel(backendApi, blobStorage, "Stores and retrieves documents")
-Rel(backendApi, queue, "Publishes and consumes async workflow messages")
-Rel(backendApi, notifications, "Sends certification notifications")
-Rel(frontend, appInsights, "Sends browser and SSR telemetry")
-Rel(backendApi, appInsights, "Sends API telemetry")
-Rel(frontend, keyVault, "Reads runtime configuration through managed identity")
-Rel(backendApi, keyVault, "Reads secrets through managed identity")
+    System_Ext(keyvault, "Azure Key Vault", "Secrets management")
+
+    System_Ext(appinsights, "Application Insights", "Telemetry and monitoring")
+
+    Rel(user, frontend, "Uses")
+
+    Rel(frontend, auth0, "Authenticate via OIDC")
+
+    Rel(frontend, api, "HTTPS REST API")
+
+    Rel(api, keyvault, "Reads secrets")
+
+    Rel(frontend, appinsights, "Sends telemetry")
+    Rel(api, appinsights, "Sends telemetry")
 ```
 
 ### C4 Level 3 - Frontend Component Diagram
 
 ```mermaid
 C4Component
-title QuietWealth - Frontend Container Components
+    title QuietWealth Frontend Components
 
-Container_Boundary(frontend, "Frontend Web App - Next.js 15 / React 19") {
-  Component(appRouter, "App Router", "Next.js App Router", "Maps routes to protected pages")
-  Component(authGuards, "Route Guards", "AuthGuard, GuestGuard, PolicyGuard", "Protects routes by authentication and permission policies")
-  Component(uiPages, "Feature Pages", "React Pages", "Login, Marketplace, Document Upload, Expert Validation, Investment Detail")
-  Component(hooks, "Feature Hooks", "React Hooks", "useAuth, useMarketplace, useDocumentUpload, useExpertValidation, useInvestmentDetail, usePolicies")
-  Component(authFacade, "Auth Facade", "Facade + Singleton", "Centralizes login, logout, token retrieval, and session access")
-  Component(authMiddleware, "Auth Middleware", "Proxy", "Attaches Bearer tokens and handles token refresh or unauthorized responses")
-  Component(profileAdapter, "Microsoft Profile Adapter", "Adapter", "Maps Microsoft/Auth0 claims to UserSessionDTO")
-  Component(policyModule, "Access Policy Module", "TypeScript Policies", "Defines roles, permissions, and access rules")
-  Component(httpClient, "HTTP Client Facade", "Axios Facade", "Central API communication and response validation")
-  Component(domainServices, "Domain Services", "TypeScript Services", "MarketplaceService, TrustRecordService, ExpertValidationService, InvestmentService")
-  Component(validationSchemas, "Validation Schemas", "Zod", "Validates forms, uploads, and API response contracts")
-  Component(stateStore, "Redux Store", "Redux Toolkit", "auth, marketplace, certification, and validation slices")
-  Component(polling, "Polling Module", "Observer + Strategy", "CertificationPollingStore, CertificationPollingManager, PollingOrchestrator, polling strategies")
-  Component(logger, "Logger and Exception Handler", "Singleton Utilities", "Centralized logs, redaction, and user-facing error mapping")
-  Component(settings, "Settings Provider", "Configuration", "Reads runtime configuration and environment values")
-  Component(i18n, "Internationalization", "i18n Provider", "Externalized UI text in English and Spanish")
-  Component(designSystem, "Design System", "Atomic Design + Tailwind Tokens", "Atoms, molecules, organisms, templates, tokens, theme")
-}
+    Container_Boundary(frontend, "Next.js Frontend") {
 
-System_Ext(auth0, "Auth0", "Identity provider")
-System_Ext(backendApi, "Backend API", "Protected REST API")
-System_Ext(appInsights, "Application Insights", "Telemetry")
-System_Ext(keyVault, "Azure Key Vault", "Secrets and configuration")
+        Component(ui, "Pages & Components", "React", "Presentation layer")
 
-Rel(appRouter, authGuards, "Wraps protected routes with")
-Rel(authGuards, policyModule, "Checks access policies")
-Rel(authGuards, hooks, "Reads session and permissions from")
-Rel(uiPages, hooks, "Delegates business actions to")
-Rel(uiPages, designSystem, "Renders reusable UI with")
-Rel(hooks, domainServices, "Calls")
-Rel(hooks, stateStore, "Reads and dispatches")
-Rel(hooks, validationSchemas, "Validates user input with")
-Rel(domainServices, httpClient, "Uses")
-Rel(httpClient, authMiddleware, "Passes protected requests through")
-Rel(authMiddleware, authFacade, "Requests access token from")
-Rel(authFacade, profileAdapter, "Normalizes claims through")
-Rel(authFacade, auth0, "Starts login and token flows")
-Rel(httpClient, backendApi, "Sends REST requests to")
-Rel(polling, domainServices, "Fetches certification status through")
-Rel(polling, stateStore, "Publishes status updates to")
-Rel(logger, appInsights, "Sends sanitized telemetry to")
-Rel(settings, keyVault, "Reads production configuration from")
+        Component(hooks, "Feature Hooks", "TypeScript", "Use cases and orchestration")
+
+        Component(state, "Redux Store", "Redux Toolkit", "Application state")
+
+        Component(services, "Application Services", "Axios", "API communication")
+
+        Component(auth, "AuthFacade", "OIDC", "Authentication and authorization")
+
+        Component(polling, "PollingOrchestrator", "TypeScript", "Long running workflows")
+
+        Component(validation, "Zod Schemas", "Zod", "Runtime contract validation")
+
+        Component(errors, "ExceptionHandler", "TypeScript", "Error handling")
+    }
+
+    Rel(ui, hooks, "Calls")
+    Rel(hooks, state, "Reads/Writes")
+    Rel(hooks, services, "Uses")
+    Rel(services, validation, "Validates responses")
+    Rel(services, errors, "Reports failures")
+    Rel(hooks, auth, "Checks permissions")
+    Rel(hooks, polling, "Starts/Stops polling")
 ```
 
 ### C4 Level 4 - Auth and Security Code Diagram
@@ -734,8 +713,8 @@ app/__tests__/
 └── e2e/
     ├── login.spec.ts
     ├── marketplace.spec.ts
-    ├── documentUpload.spec.ts
-    └── expertValidation.spec.ts
+    ├── document-upload.spec.ts
+    └── expert-validation.spec.ts
 │
 app/__mocks__/
 └── styleMock.ts
