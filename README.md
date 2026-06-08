@@ -184,7 +184,383 @@ A usability test was conducted using Maze. Tests were shared remotely via URL.
 ### 1.4.5 API Communication
 ### 1.4.6 Storage Rules
 ### 1.4.7 Data Masking
-### 1.4.8 OWASP Mitigations(Camilo)
+
+
+## 1.4.8 OWASP Mitigations
+
+This section defines the concrete security responsibilities that frontend developers must follow when implementing QuietWealth features. Each mitigation includes the expected developer action, the affected frontend area, and the acceptance criteria used during review.
+
+| OWASP Risk                      | Developer Responsibility                                                                                                                                           | Implementation Area                                                                         | Review / Acceptance Criteria                                                                                                                             |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| XSS                             | Never render untrusted HTML directly. Do not use `dangerouslySetInnerHTML`. All dynamic text must be rendered through React JSX escaping.                          | `app/components/`, `app/components/pages/`, ESLint configuration                            | Pull request is rejected if `dangerouslySetInnerHTML` appears. ESLint rule must fail the build.                                                          |
+| Broken Authentication           | All login, logout, token retrieval, and token refresh logic must go through `AuthFacade`. Developers must not manually call Auth0 from pages or components.        | `app/auth/AuthFacade.ts`, `app/auth/AuthMiddleware.ts`, `app/services/httpInterceptors.ts`  | Components never access Auth0 SDK directly. API calls receive tokens only through the HTTP interceptor.                                                  |
+| Token Exposure                  | Access tokens must remain in memory only. Tokens must never be stored in `localStorage`, `sessionStorage`, IndexedDB, or URL parameters.                           | `app/state/authSlice.ts`, `app/state/sessionManager.ts`, `app/services/httpInterceptors.ts` | Static analysis blocks token-related keys in browser storage. Manual review verifies no token persistence exists.                                        |
+| Broken Access Control           | Protected routes must be wrapped with `AuthGuard` and `PolicyGuard`. UI actions must check permissions through `usePolicies()` instead of checking roles directly. | `app/auth/guards/`, `app/auth/policies/`, `app/components/hooks/usePolicies.ts`             | Code must not use direct checks such as `user.role === "financial_analyst"`. Permission checks must use access policies.                                 |
+| Sensitive Data Exposure         | Financial values must be masked unless the authenticated user has permission to view them and the backend has already authorized the response.                     | `app/components/atoms/MaskedValue/`, `app/components/organisms/InvestmentDetailPanel/`      | Unauthorized users see masked or null values. Client-side masking is not treated as the only security control.                                           |
+| Injection                       | All form inputs and API responses must be validated with Zod schemas before being used by Redux state or UI components.                                            | `app/validation/`, `app/services/`, feature hooks                                           | Invalid payloads must throw a validation error and must not update the UI state.                                                                         |
+| CSRF                            | Authentication must use Auth0 Authorization Code + PKCE and the Auth0 `state` parameter. Developers must not implement custom OAuth callbacks manually.            | `app/auth/AuthFacade.ts`, Auth0 configuration                                               | Login flow must preserve PKCE and state validation. No custom unsafe callback handling is allowed.                                                       |
+| Security Misconfiguration       | Environment variables and secrets must be read through the settings layer. Secrets must never be committed to the repository.                                      | `app/settings/Settings.ts`, Azure Key Vault, `.env.example`                                 | `.env.example` contains placeholders only. Real secrets are provided through Azure Key Vault or local developer configuration.                           |
+| Clickjacking                    | The deployed application must reject iframe embedding.                                                                                                             | Azure App Service headers / Next.js security headers                                        | `X-Frame-Options: DENY` or `Content-Security-Policy: frame-ancestors 'none'` must be configured.                                                         |
+| Security Logging and Monitoring | Security-relevant events must be logged through the `Logger` and `AuthAuditQueue`. Raw tokens, passwords, secrets, or financial values must never be logged.       | `app/utils/logger.ts`, `app/auth/AuthAuditQueue.ts`, Azure Application Insights             | Logs include `correlationId`, event type, hashed user identifier, and timestamp. Logs must redact keys matching `token`, `secret`, `password`, or `key`. |
+| File Upload Abuse               | Uploaded documents must be validated by MIME type and size before submission. The frontend validates early, but the backend remains the final authority.           | `app/validation/documentUploadSchema.ts`, `app/components/molecules/DocumentUploader/`      | Files above the allowed size or unsupported MIME types are rejected before upload and display a clear validation message.                                |
+
+### Developer Rules
+
+Developers must follow these rules in every feature:
+
+* Do not call APIs directly from components.
+* Do not store tokens in browser-persistent storage.
+* Do not check user roles directly in components.
+* Do not log raw financial values or authentication secrets.
+* Do not create new security logic inside pages; reuse `AuthFacade`, `AuthMiddleware`, `PolicyGuard`, `usePolicies()`, and Zod schemas.
+* Every protected screen must have both authentication and authorization checks.
+
+---
+
+## 1.5 Frontend Layered Design
+
+The layered design is not a replacement for the C4 architecture diagrams. The C4 diagrams explain the system structure, while this section defines the dependency rules that frontend developers must follow when writing code.
+
+The frontend uses five logical layers with downward-only dependencies.
+
+| Layer          | Responsibility                                                   | Examples                                                                                                                     | Developer Rule                                                        |
+| -------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Presentation   | Render UI and receive user interaction                           | Atoms, molecules, organisms, pages, layouts                                                                                  | May call hooks, but must not call services or API clients directly.   |
+| Application    | Orchestrate use cases and UI workflows                           | `useAuth`, `useMarketplace`, `useDocumentUpload`, `useExpertValidation`, `useInvestmentDetail`                               | Validates user actions, calls services, dispatches Redux actions.     |
+| Domain         | Define business rules, permissions, DTOs, and validation schemas | Zod schemas, role definitions, permission policies, models                                                                   | Must not import React components or infrastructure clients.           |
+| Services       | Communicate with backend and external SDKs                       | `AuthFacade`, `HttpClientFacade`, `MarketplaceService`, `TrustRecordService`, `ExpertValidationService`, `InvestmentService` | Must expose clean methods to hooks and must not render UI.            |
+| Infrastructure | Shared technical concerns                                        | Redux store, `SessionProvider`, `Logger`, `ExceptionHandler`, i18n, settings, design tokens                                  | Supports other layers but must not contain feature-specific UI logic. |
+
+### Allowed Dependency Flow
+
+```mermaid
+C4Component
+title Frontend Layered Design - QuietWealth
+
+Container_Boundary(frontend, "Frontend Container - Next.js SSR") {
+  Component(presentation, "Presentation Layer", "React Components", "Pages, layouts, atoms, molecules, organisms")
+  Component(application, "Application Layer", "React Hooks", "Feature hooks orchestrate validation, services, and state updates")
+  Component(domain, "Domain Layer", "TypeScript + Zod", "DTOs, schemas, permissions, access policies")
+  Component(services, "Services Layer", "TypeScript Services", "HTTP facade, AuthFacade, domain services")
+  Component(infrastructure, "Infrastructure Layer", "Redux, i18n, Logger, Settings", "Shared technical utilities and providers")
+}
+
+Rel(presentation, application, "Uses hooks")
+Rel(application, domain, "Validates with schemas and policies")
+Rel(application, services, "Calls service facades")
+Rel(application, infrastructure, "Dispatches state updates")
+Rel(services, infrastructure, "Uses logger, settings, HTTP client")
+Rel(domain, infrastructure, "Uses shared types only")
+```
+
+### Dependency Rules
+
+| Rule                                                 | Correct                                                             | Incorrect                           |
+| ---------------------------------------------------- | ------------------------------------------------------------------- | ----------------------------------- |
+| Components must not call backend services directly   | `DocumentUploadPage` → `useDocumentUpload()` → `TrustRecordService` | `DocumentUploadPage` → `fetch()`    |
+| Components must not check roles directly             | `hasAccess("canCertifySME")`                                        | `user.role === "financial_analyst"` |
+| API responses must be validated before state updates | `TrustRecordService` → Zod schema → Redux action                    | API response → Redux state directly |
+| Auth logic must be centralized                       | `AuthFacade.login()`                                                | Auth0 SDK call inside a page        |
+| Errors must be handled centrally                     | `ExceptionHandler.handle(error)`                                    | `console.log(error)` in components  |
+
+### Example: Login Flow
+
+`LoginPage` receives the user action and calls `useAuth().login()`.
+`useAuth()` delegates authentication to `AuthFacade`.
+`AuthFacade` starts the Auth0 Authorization Code + PKCE flow.
+After callback validation, the session is normalized through `MicrosoftProfileAdapter`.
+`SessionManager` updates the active session and Redux reflects the authenticated state.
+
+### Example: Document Upload Flow
+
+`DocumentUploadPage` calls `useDocumentUpload().submit(files)`.
+`useDocumentUpload()` validates files with `documentUploadSchema`.
+`TrustRecordService` sends the request to the backend.
+The backend responds with `202 Accepted`.
+`PollingOrchestrator` starts status polling.
+`certificationSlice` updates the progress tracker until the application reaches a terminal state.
+
+---
+
+## 1.10 Architecture Diagrams (C4)
+
+### C4 Level 1 - System Context
+
+```mermaid
+C4Context
+title QuietWealth - System Context
+
+Person(smeOwner, "SME Owner", "Uploads financial documents and tracks certification status")
+Person(financialAnalyst, "Financial Analyst", "Reviews SME applications and issues certification decisions")
+Person(investor, "Investor", "Browses certified SMEs and views investment detail")
+Person(sysAdmin, "System Administrator", "Manages users, roles, configuration, and audit visibility")
+
+System(qw, "QuietWealth", "Financial trust record and certified SME investment marketplace")
+
+System_Ext(auth0, "Auth0", "Identity broker using OAuth 2.0 Authorization Code + PKCE")
+System_Ext(entra, "Microsoft Entra ID", "Corporate identity provider")
+System_Ext(appInsights, "Azure Application Insights", "Observability, logs, metrics, and traces")
+
+Rel(smeOwner, qw, "Uses", "HTTPS")
+Rel(financialAnalyst, qw, "Uses", "HTTPS")
+Rel(investor, qw, "Uses", "HTTPS")
+Rel(sysAdmin, qw, "Uses", "HTTPS")
+
+Rel(qw, auth0, "Authenticates users through", "OIDC / OAuth 2.0 PKCE")
+Rel(auth0, entra, "Federates authentication to")
+Rel(qw, appInsights, "Sends telemetry to")
+```
+
+### C4 Level 2 - Container Diagram
+
+```mermaid
+C4Container
+title QuietWealth - Container Diagram
+
+Person(smeOwner, "SME Owner", "Uploads financial documents")
+Person(financialAnalyst, "Financial Analyst", "Certifies SME applications")
+Person(investor, "Investor", "Browses certified SMEs")
+Person(sysAdmin, "System Administrator", "Manages platform configuration")
+
+System_Ext(auth0, "Auth0", "Identity broker")
+System_Ext(entra, "Microsoft Entra ID", "Corporate identity provider")
+
+System_Boundary(qw, "QuietWealth") {
+  Container(frontend, "Frontend Web App", "Next.js 15, React 19, Node.js 22", "SSR web application for marketplace, document upload, validation panel, and investment details")
+  Container(apiGateway, "API Gateway", "Azure API Management", "Central entry point for backend APIs, rate limits, and request policies")
+  Container(backendApi, "Backend API", "ASP.NET Core / .NET", "Trust record, document intake, validation, marketplace, and investment APIs")
+  ContainerDb(sqlDb, "Azure SQL Database", "Relational Database", "Stores users, roles, SMEs, trust records, certification states, and audit references")
+  Container(blobStorage, "Azure Blob Storage", "Object Storage", "Stores uploaded financial documents")
+  Container(queue, "Azure Service Bus", "Message Broker", "Coordinates asynchronous document processing and certification workflows")
+  Container(notifications, "Notification Service", "Azure Notification Hubs / Email Provider", "Notifies users about certification status changes")
+  Container(appInsights, "Application Insights", "Monitoring", "Collects frontend and backend logs, metrics, traces, and alerts")
+  Container(keyVault, "Azure Key Vault", "Secrets Management", "Stores Auth0 secrets, API keys, and sensitive configuration")
+}
+
+Rel(smeOwner, frontend, "Uploads documents and tracks status", "HTTPS")
+Rel(financialAnalyst, frontend, "Reviews certification queue", "HTTPS")
+Rel(investor, frontend, "Browses marketplace and details", "HTTPS")
+Rel(sysAdmin, frontend, "Manages configuration", "HTTPS")
+
+Rel(frontend, auth0, "Authenticates users", "OIDC / OAuth 2.0 PKCE")
+Rel(auth0, entra, "Federates authentication")
+Rel(frontend, apiGateway, "Calls protected APIs", "HTTPS / REST / Bearer JWT")
+Rel(apiGateway, backendApi, "Routes API requests", "HTTPS")
+Rel(backendApi, sqlDb, "Reads and writes business data")
+Rel(backendApi, blobStorage, "Stores and retrieves documents")
+Rel(backendApi, queue, "Publishes and consumes async workflow messages")
+Rel(backendApi, notifications, "Sends certification notifications")
+Rel(frontend, appInsights, "Sends browser and SSR telemetry")
+Rel(backendApi, appInsights, "Sends API telemetry")
+Rel(frontend, keyVault, "Reads runtime configuration through managed identity")
+Rel(backendApi, keyVault, "Reads secrets through managed identity")
+```
+
+### C4 Level 3 - Frontend Component Diagram
+
+```mermaid
+C4Component
+title QuietWealth - Frontend Container Components
+
+Container_Boundary(frontend, "Frontend Web App - Next.js 15 / React 19") {
+  Component(appRouter, "App Router", "Next.js App Router", "Maps routes to protected pages")
+  Component(authGuards, "Route Guards", "AuthGuard, GuestGuard, PolicyGuard", "Protects routes by authentication and permission policies")
+  Component(uiPages, "Feature Pages", "React Pages", "Login, Marketplace, Document Upload, Expert Validation, Investment Detail")
+  Component(hooks, "Feature Hooks", "React Hooks", "useAuth, useMarketplace, useDocumentUpload, useExpertValidation, useInvestmentDetail, usePolicies")
+  Component(authFacade, "Auth Facade", "Facade + Singleton", "Centralizes login, logout, token retrieval, and session access")
+  Component(authMiddleware, "Auth Middleware", "Proxy", "Attaches Bearer tokens and handles token refresh or unauthorized responses")
+  Component(profileAdapter, "Microsoft Profile Adapter", "Adapter", "Maps Microsoft/Auth0 claims to UserSessionDTO")
+  Component(policyModule, "Access Policy Module", "TypeScript Policies", "Defines roles, permissions, and access rules")
+  Component(httpClient, "HTTP Client Facade", "Axios Facade", "Central API communication and response validation")
+  Component(domainServices, "Domain Services", "TypeScript Services", "MarketplaceService, TrustRecordService, ExpertValidationService, InvestmentService")
+  Component(validationSchemas, "Validation Schemas", "Zod", "Validates forms, uploads, and API response contracts")
+  Component(stateStore, "Redux Store", "Redux Toolkit", "auth, marketplace, certification, and validation slices")
+  Component(polling, "Polling Module", "Observer + Strategy", "CertificationPollingStore, CertificationPollingManager, PollingOrchestrator, polling strategies")
+  Component(logger, "Logger and Exception Handler", "Singleton Utilities", "Centralized logs, redaction, and user-facing error mapping")
+  Component(settings, "Settings Provider", "Configuration", "Reads runtime configuration and environment values")
+  Component(i18n, "Internationalization", "i18n Provider", "Externalized UI text in English and Spanish")
+  Component(designSystem, "Design System", "Atomic Design + Tailwind Tokens", "Atoms, molecules, organisms, templates, tokens, theme")
+}
+
+System_Ext(auth0, "Auth0", "Identity provider")
+System_Ext(backendApi, "Backend API", "Protected REST API")
+System_Ext(appInsights, "Application Insights", "Telemetry")
+System_Ext(keyVault, "Azure Key Vault", "Secrets and configuration")
+
+Rel(appRouter, authGuards, "Wraps protected routes with")
+Rel(authGuards, policyModule, "Checks access policies")
+Rel(authGuards, hooks, "Reads session and permissions from")
+Rel(uiPages, hooks, "Delegates business actions to")
+Rel(uiPages, designSystem, "Renders reusable UI with")
+Rel(hooks, domainServices, "Calls")
+Rel(hooks, stateStore, "Reads and dispatches")
+Rel(hooks, validationSchemas, "Validates user input with")
+Rel(domainServices, httpClient, "Uses")
+Rel(httpClient, authMiddleware, "Passes protected requests through")
+Rel(authMiddleware, authFacade, "Requests access token from")
+Rel(authFacade, profileAdapter, "Normalizes claims through")
+Rel(authFacade, auth0, "Starts login and token flows")
+Rel(httpClient, backendApi, "Sends REST requests to")
+Rel(polling, domainServices, "Fetches certification status through")
+Rel(polling, stateStore, "Publishes status updates to")
+Rel(logger, appInsights, "Sends sanitized telemetry to")
+Rel(settings, keyVault, "Reads production configuration from")
+```
+
+### C4 Level 4 - Auth and Security Code Diagram
+
+```mermaid
+classDiagram
+direction TB
+
+class AuthFacade {
+  <<Facade + Singleton>>
+  -auth0Client
+  -sessionManager
+  -profileAdapter
+  -auditQueue
+  +getInstance() AuthFacade
+  +login() Promise~void~
+  +logout() Promise~void~
+  +getAccessToken() Promise~string~
+  +getSession() UserSessionDTO
+}
+
+class AuthMiddleware {
+  <<Proxy>>
+  -authFacade AuthFacade
+  -exceptionHandler ExceptionHandler
+  +intercept(request) Promise~Request~
+  -refreshTokenIfExpired() Promise~void~
+  -handleUnauthorized() void
+}
+
+class MicrosoftProfileAdapter {
+  <<Adapter>>
+  +adapt(rawClaims MicrosoftClaims) UserSessionDTO
+  -resolveRole(rawClaims MicrosoftClaims) RoleType
+}
+
+class AuthAuditQueue {
+  <<Queue-Based Logging>>
+  -queue AuthEvent[]
+  +enqueue(event AuthEvent) void
+  -flush() Promise~void~
+}
+
+class SessionManager {
+  <<Singleton>>
+  -session UserSessionDTO
+  +setSession(session) void
+  +clearSession() void
+  +handleUnauthorized() void
+  +getSession() UserSessionDTO
+}
+
+class AuthGuard {
+  <<Route Guard>>
+  +render(children) ReactNode
+}
+
+class GuestGuard {
+  <<Route Guard>>
+  +render(children) ReactNode
+}
+
+class PolicyGuard {
+  <<Route Guard>>
+  +required PermissionCode[]
+  +render(children) ReactNode
+}
+
+class AccessPolicy {
+  <<Policy Map>>
+  +canBrowseMarketplace PermissionCode[]
+  +canViewInvestmentDetail PermissionCode[]
+  +canUploadDocuments PermissionCode[]
+  +canAccessValidationQueue PermissionCode[]
+  +canCertifySME PermissionCode[]
+  +canManageSystem PermissionCode[]
+}
+
+class RolePermissions {
+  <<Permission Mapping>>
+  +investor PermissionCode[]
+  +sme_owner PermissionCode[]
+  +financial_analyst PermissionCode[]
+  +sys_admin PermissionCode[]
+}
+
+class UsePolicies {
+  <<Hook>>
+  +hasAccess(policyName) boolean
+  +hasSomeAccess(policyName) boolean
+  +getMissingPermissions(policyName) PermissionCode[]
+}
+
+class HttpClientFacade {
+  <<Facade>>
+  +get(url, schema) Promise
+  +post(url, body, schema) Promise
+  +put(url, body, schema) Promise
+  +delete(url, schema) Promise
+}
+
+class Logger {
+  <<Singleton>>
+  +info(event, metadata) void
+  +warn(event, metadata) void
+  +error(event, metadata) void
+  -redactSensitiveKeys(metadata) object
+}
+
+class ExceptionHandler {
+  <<Singleton>>
+  +handle(error) UserFacingError
+  +mapStatusCode(status) string
+}
+
+AuthFacade --> MicrosoftProfileAdapter
+AuthFacade --> AuthAuditQueue
+AuthFacade --> SessionManager
+AuthMiddleware --> AuthFacade
+AuthMiddleware --> ExceptionHandler
+AuthGuard --> SessionManager
+GuestGuard --> SessionManager
+PolicyGuard --> UsePolicies
+UsePolicies --> AccessPolicy
+UsePolicies --> RolePermissions
+HttpClientFacade --> AuthMiddleware
+HttpClientFacade --> ExceptionHandler
+AuthAuditQueue --> Logger
+ExceptionHandler --> Logger
+```
+
+---
+
+## Broken Links Policy
+
+To avoid broken links in the README, documentation must follow one of these two rules:
+
+1. Use a markdown link only when the referenced file already exists in the repository.
+2. If the file is part of the proposed scaffold but has not been created yet, write the path in backticks instead of using a link.
+
+Correct:
+
+```md
+`app/auth/AuthFacade.ts`
+```
+
+Incorrect when the file does not exist yet:
+
+```md
+[app/auth/AuthFacade.ts](app/auth/AuthFacade.ts)
+```
+
+Before submitting the documentation, the team must run a link check or manually verify every local markdown link that points to `app/`, `server/`, `infra/`, or `Media/`.
+
+
+
 
 ## 1.5 Layered Design
 ## 1.6 Design Patterns
