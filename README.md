@@ -1078,8 +1078,228 @@ export default defineConfig({
 
 Run locally: `npx playwright test` · Run single file: `npx playwright test marketplace.spec.ts` · Open UI mode: `npx playwright test --ui`
 
-## 1.9 CI/CD(jose)
+---
 
+## [1.9 CI/CD](.github/workflows/)
+
+**Technology:** GitHub Actions. All pipeline definitions live in [`.github/workflows/`](.github/workflows/). The repository has two protected branches: `staging` (QA) and `main` (Production). Merging into either branch is the only deployment trigger — there are no manual `workflow_dispatch` runs for normal deployments.
+
+**Environments:** GitHub Environments (`QA`, `Production`) are configured under **Repository → Settings → Environments**. Each environment holds its own secrets and, for Production, requires a manual approval before the deploy job runs.
+
+### Deployment flow
+
+```
+developer pushes code
+        │
+        ▼
+ ┌─────────────────────┐
+ │  ci-frontend        │  runs on every push to any branch
+ │  ci-backend         │  lint · typecheck · test · build
+ │  security-scan      │  on every PR only
+ └────────┬────────────┘
+          │ all checks pass
+          ▼
+   branch = staging?
+      │         │
+     yes        no → stops here (feature branches don't deploy)
+      │
+      ▼
+ deploy-qa  ──────────────────►  qaquietwealth-frontend (Azure App Service)
+                                  qaquietwealth-api     (Azure App Service)
+          │
+          │ merge staging → main
+          ▼
+ deploy-prod  (manual approval required in GitHub Environment)
+          │
+          ▼
+ prodquietwealth-frontend (Azure App Service)
+ prodquietwealth-api      (Azure App Service)
+```
+
+Authentication to Azure uses **OIDC** — no stored credentials. GitHub exchanges a short-lived token with Azure Entra ID at deploy time. See [OIDC setup](#oidc-and-azure-app-registrations) below.
+
+### Pipeline files
+
+| File | Trigger | Scope |
+|---|---|---|
+| [`.github/workflows/ci-frontend.yml`](.github/workflows/ci-frontend.yml) | Push to any branch, path `app/**` | `npm ci` → ESLint → Prettier → `tsc --noEmit` → Jest + coverage → `npm run build` → bundle analysis |
+| [`.github/workflows/ci-backend.yml`](.github/workflows/ci-backend.yml) | Push to any branch, path `server/**` | `dotnet restore` → `dotnet build` → `dotnet test` → `dotnet format --verify-no-changes` |
+| [`.github/workflows/security-scan.yml`](.github/workflows/security-scan.yml) | Pull requests only | `npm audit` · OSSF Scorecard · `gitleaks` for secret scanning |
+| [`.github/workflows/deploy-qa-frontend.yml`](.github/workflows/deploy-qa-frontend.yml) | Push to `staging`, path `app/**` | Build → upload artifact → Azure login (OIDC) → `azure/webapps-deploy` |
+| [`.github/workflows/deploy-qa-api.yml`](.github/workflows/deploy-qa-api.yml) | Push to `staging`, path `server/**` | Build → publish → Azure login (OIDC) → `azure/webapps-deploy` |
+| [`.github/workflows/deploy-prod-frontend.yml`](.github/workflows/deploy-prod-frontend.yml) | Push to `main`, path `app/**` + manual approval | Same as QA workflow; targets `prodquietwealth-frontend` |
+| [`.github/workflows/deploy-prod-api.yml`](.github/workflows/deploy-prod-api.yml) | Push to `main`, path `server/**` + manual approval | Same as QA workflow; targets `prodquietwealth-api` |
+
+### Workflow structure (frontend deploy)
+
+Every deploy workflow follows the same two-job pattern. The build job has no Azure permissions; only the deploy job requests `id-token: write` for OIDC.
+
+```yaml
+# .github/workflows/deploy-qa-frontend.yml
+on:
+  push:
+    branches: [staging]
+    paths: [app/**]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment: QA
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: 'npm', cache-dependency-path: app/package-lock.json }
+      - run: npm ci
+        working-directory: app
+      - run: npm run lint
+        working-directory: app
+      - run: npm run format:check
+        working-directory: app
+      - run: npx tsc --noEmit
+        working-directory: app
+      - run: npm run test:coverage
+        working-directory: app
+      - run: npm run build
+        working-directory: app
+        env:
+          NEXT_PUBLIC_AUTH0_DOMAIN:    ${{ secrets.AUTH0_DOMAIN }}
+          NEXT_PUBLIC_AUTH0_CLIENT_ID: ${{ secrets.AUTH0_CLIENT_ID }}
+          NEXT_PUBLIC_API_BASE_URL:    ${{ secrets.API_BASE_URL }}
+      - uses: actions/upload-artifact@v4
+        with: { name: node-app, path: app/.next/ }
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    environment: QA
+    permissions:
+      id-token: write   # required for OIDC — must NOT be on the build job
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: node-app }
+      - uses: azure/login@v2
+        with:
+          client-id:       ${{ secrets.AZUREAPPSERVICE_CLIENTID_QA_FRONTEND }}
+          tenant-id:       ${{ secrets.AZUREAPPSERVICE_TENANTID_QA }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_QA }}
+      - uses: azure/webapps-deploy@v3
+        with:
+          app-name: qaquietwealth-frontend
+          package: .
+```
+
+`NEXT_PUBLIC_*` variables are baked into the Next.js bundle at build time. They are **not** runtime Azure App Service settings — do not add them under **Configuration → Application settings** in the portal.
+
+### Pre-commit hooks
+
+Husky runs `lint-staged` before every local commit. Failing checks block the commit.
+
+```json
+// app/.lintstagedrc.json
+{
+  "app/**/*.{ts,tsx}": ["eslint --fix", "prettier --write"],
+  "app/**/*.{css,json}": ["prettier --write"]
+}
+```
+
+Custom ESLint rules enforced on every file:
+- `no-restricted-syntax` → no `dangerouslySetInnerHTML`
+- `no-restricted-globals` → no `localStorage.setItem` / `sessionStorage.setItem` with token-related keys
+- `no-console` → use `Logger` from `app/utils/logger.ts`
+- `i18n/no-literal-string` → no hardcoded display strings outside i18n keys
+
+### Secrets — where they live and how to get them
+
+#### Local development
+
+Create `app/.env.local` (gitignored). Copy from `app/.env.example` and fill in the values:
+
+```bash
+# app/.env.local
+NEXT_PUBLIC_AUTH0_DOMAIN=dev-xxxx.us.auth0.com
+NEXT_PUBLIC_AUTH0_CLIENT_ID=<from Auth0 dashboard → Applications → QuietWealth Dev>
+NEXT_PUBLIC_API_BASE_URL=http://localhost:5000
+AUTH0_SECRET=<random 32-char string, generate with: openssl rand -hex 32>
+```
+
+Auth0 values come from the **Auth0 dashboard → Applications → QuietWealth Dev application → Settings**. Never commit this file.
+
+#### QA and Production (GitHub Actions)
+
+Secrets are stored in **GitHub → Repository → Settings → Environments → QA / Production → Environment secrets**. They are injected at pipeline runtime and never written to disk or logs.
+
+| Secret | Environment | Where to get the value |
+|---|---|---|
+| `AZUREAPPSERVICE_CLIENTID_QA_FRONTEND` | QA | Output of [`infra/setup-github-oidc.ps1`](infra/setup-github-oidc.ps1) |
+| `AZUREAPPSERVICE_CLIENTID_QA_API` | QA | Output of [`infra/setup-github-oidc.ps1`](infra/setup-github-oidc.ps1) |
+| `AZUREAPPSERVICE_TENANTID_QA` | QA | Azure Portal → Entra ID → Overview → Tenant ID |
+| `AZUREAPPSERVICE_SUBSCRIPTIONID_QA` | QA | Azure Portal → Subscriptions |
+| `AUTH0_DOMAIN` | QA + Production | Auth0 dashboard → Tenant Settings |
+| `AUTH0_CLIENT_ID` | QA + Production | Auth0 dashboard → Applications → QuietWealth QA/Prod |
+| `API_BASE_URL` | QA | `https://qaquietwealth-api.azurewebsites.net` |
+| `AZUREAPPSERVICE_CLIENTID_PROD_FRONTEND` | Production | Output of [`infra/setup-github-oidc.ps1`](infra/setup-github-oidc.ps1) |
+| `AZUREAPPSERVICE_CLIENTID_PROD_API` | Production | Output of [`infra/setup-github-oidc.ps1`](infra/setup-github-oidc.ps1) |
+| `AZUREAPPSERVICE_TENANTID_PROD` | Production | Azure Portal → Entra ID → Overview → Tenant ID |
+| `AZUREAPPSERVICE_SUBSCRIPTIONID_PROD` | Production | Azure Portal → Subscriptions |
+| `API_BASE_URL` | Production | `https://prodquietwealth-api.azurewebsites.net` |
+
+Backend secrets (`ConnectionStrings__QuietWealthSql`, `BlobStorage__ConnectionString`, `NotificationHub__ConnectionString`, `AUTH0_CLIENT_SECRET`) are provisioned directly as Azure App Service **Application settings** via Bicep — they never pass through GitHub Actions.
+
+### OIDC and Azure App Registrations
+
+OIDC lets GitHub Actions deploy to Azure without storing long-lived credentials. The script [`infra/setup-github-oidc.ps1`](infra/setup-github-oidc.ps1) automates the one-time setup. Run it locally with `az login` and `gh auth login` active before the first deployment to each environment.
+
+**What the script does for each app × environment combination** (`frontend-qa`, `api-qa`, `frontend-prod`, `api-prod`):
+
+1. Creates an **Entra ID App Registration** named `qw-{env}-{role}-deploy` (e.g. `qw-qa-frontend-deploy`).
+2. Creates a **Service Principal** for it.
+3. Adds a **Federated Credential** with:
+   - Issuer: `https://token.actions.githubusercontent.com`
+   - Subject: `repo:danielpulido01/QuietWealth:environment:QA` (or `Production`)
+   - Audience: `api://AzureADTokenExchange`
+4. Assigns the **Contributor** role scoped to the specific Azure Web App resource only — not subscription-wide.
+5. Writes the three OIDC secrets (`CLIENTID`, `TENANTID`, `SUBSCRIPTIONID`) into the correct GitHub Environment via `gh secret set`.
+
+After running the script, the secrets listed in the table above will be populated automatically. No manual copy-paste from the Azure portal.
+
+**Critical constraints:**
+- Each Web App has its own App Registration and `clientId`. `tenantId` and `subscriptionId` are shared within an environment.
+- Do not reuse the same App Registration across frontend and API — each needs its own federated credential with the correct subject.
+- Bicep infra secrets (`ConnectionStrings__*`, `BlobStorage__*`) are passed via `.bicepparam` using `readEnvironmentVariable()`. Set them in your local shell before running `deploy.ps1`:
+
+```powershell
+# Set before running infra deployment — never commit these
+$env:QW_SQL_CONNECTION      = '...'
+$env:BLOB_CONNECTION        = '...'
+$env:NOTIFICATION_CONNECTION = '...'
+.\infra\deploy.ps1 -Environment qa
+```
+
+Infra deployment is **manual only** and runs from a developer machine, not from GitHub Actions. The Bicep files provision the Azure resources; the GitHub Actions workflows only deploy the application code.
+
+### Infrastructure resources (Bicep)
+
+[`infra/`](infra/) — subscription scope. Deploys the resource group and all Azure resources.
+
+| Resource | QA | Production |
+|---|---|---|
+| App Service Plan | `asp-qw-qa` (B1) | `asp-qw-prod` (B1) |
+| Frontend Web App | `qaquietwealth-frontend` (Node 24 LTS) | `prodquietwealth-frontend` |
+| API Web App | `qaquietwealth-api` (DOTNETCORE 10.0) | `prodquietwealth-api` |
+
+Frontend App Service settings provisioned by Bicep:
+- `WEBSITE_NODE_DEFAULT_VERSION = ~22`
+- `SCM_DO_BUILD_DURING_DEPLOYMENT = false` — Oryx disabled; we deploy pre-built `.next/`
+
+API App Service settings provisioned by Bicep:
+- `ASPNETCORE_ENVIRONMENT = Production` (prod) / `Development` (qa — enables Swagger UI)
+- `ConnectionStrings__QuietWealthSql`, `BlobStorage__ConnectionString`, `NotificationHub__ConnectionString` — injected from `.bicepparam`
+- `AllowedOrigins__0 = https://{frontendAppName}.azurewebsites.net`
+
+---
 ## 1.10 Architecture Diagrams (C4)
 
 # Backend Design
