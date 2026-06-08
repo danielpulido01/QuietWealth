@@ -190,6 +190,266 @@ A usability test was conducted using Maze. Tests were shared remotely via URL.
 ## 1.6 Design Patterns
 
 ## 1.7 Project Scaffold
+```
+app/
+├── layout.tsx
+├── page.tsx
+├── globals.css
+├── login/
+│   └── page.tsx
+├── marketplace/
+│   └── page.tsx                   → MarketplacePage
+├── marketplace/[id]/
+│   └── page.tsx                   → InvestmentDetailPage
+├── documents/
+│   └── page.tsx                   → DocumentUploadPage
+├── validation/
+│   └── page.tsx                   → ExpertValidationPage
+└── admin/
+    └── page.tsx
+│
+app/components/
+├── atoms/
+│   ├── Button/
+│   ├── Badge/
+│   ├── Input/
+│   ├── Label/
+│   ├── Spinner/
+│   ├── ProgressBar/
+│   ├── TrustIndicator/
+│   ├── StatCard/
+│   ├── MaskedValue/
+│   └── atoms.css
+├── molecules/
+│   ├── SMECard/
+│   ├── FilterBar/
+│   ├── DocumentUploader/
+│   ├── FormField/
+│   ├── StatusBadge/
+│   ├── InfoBanner/
+│   └── molecules.css
+├── organisms/
+│   ├── MarketplaceGrid/
+│   ├── InvestmentDetailPanel/
+│   ├── ValidationQueue/
+│   ├── DocumentUploadZone/
+│   ├── Navbar/
+│   ├── Sidebar/
+│   └── organisms.css
+├── templates/
+│   ├── AuthenticatedLayout/
+│   └── PublicLayout/
+├── pages/
+│   ├── LoginPage.tsx
+│   ├── MarketplacePage.tsx
+│   ├── InvestmentDetailPage.tsx
+│   ├── DocumentUploadPage.tsx
+│   └── ExpertValidationPage.tsx
+├── hooks/
+│   ├── useApplicationServices.ts
+│   ├── useAuth.ts
+│   ├── useMarketplace.ts
+│   ├── useDocumentUpload.ts
+│   ├── useCertificationProgress.ts
+│   ├── useExpertValidation.ts
+│   ├── useInvestmentDetail.ts
+│   ├── usePermissions.ts
+│   ├── usePolicies.ts
+│   └── useSession.ts
+├── i18n/
+│   ├── config.ts
+│   ├── I18nProvider.tsx
+│   ├── en.json
+│   └── es.json
+└── styles/
+    ├── tokens.ts
+    ├── theme.ts
+    ├── breakpoints.ts
+    ├── globals.css
+    └── ThemeProvider.tsx
+│
+app/auth/
+├── AuthFacade.ts
+├── AuthMiddleware.ts
+├── AuthAuditQueue.ts
+├── authConfig.ts
+├── adapters/
+│   └── MicrosoftProfileAdapter.ts
+├── guards/
+│   ├── AuthGuard.tsx
+│   ├── GuestGuard.tsx
+│   └── PolicyGuard.tsx
+└── policies/
+    ├── roles.ts
+    ├── permissions.ts
+    ├── rolePermissions.ts
+    └── accessPolicy.ts
+│
+app/polling/
+├── PollingOrchestrator.ts
+└── strategies/
+    ├── IPollingStrategy.ts
+    ├── FixedIntervalStrategy.ts
+    └── ExponentialBackoffStrategy.ts
+│
+app/services/
+├── applicationFacade.ts
+├── client.ts
+├── httpInterceptors.ts
+├── MarketplaceService.ts
+├── TrustRecordService.ts
+├── ExpertValidationService.ts
+└── InvestmentService.ts
+│
+app/state/
+├── certification.types.ts
+├── certificationPollingStore.ts
+├── certificationPollingManager.ts
+├── session.types.ts
+├── sessionManager.ts
+├── SessionProvider.tsx
+├── StoreProvider.tsx
+├── store.ts
+├── hooks.ts
+└── slices/
+    ├── authSlice.ts
+    ├── marketplaceSlice.ts
+    ├── certificationSlice.ts
+    └── validationSlice.ts
+│
+app/models/
+├── ApiResponse.ts
+├── SME.ts
+├── TrustRecord.ts
+├── DocumentUpload.ts
+├── Permission.ts
+├── Role.ts
+└── User.ts
+│
+app/validation/
+├── documentUploadSchema.ts
+├── smeSchema.ts
+├── userSchema.ts
+└── index.ts
+│
+app/settings/
+└── Settings.ts
+│
+app/utils/
+├── logger.ts
+├── error-handler.ts
+├── eventBus.ts
+├── schemaValidator.ts
+├── constants.ts
+└── formatters.ts
+│
+app/assets/
+└── logo/
+    ├── logo-dark.svg
+    └── logo-light.svg
+│
+app/__tests__/
+├── setup.ts
+├── unit/
+│   ├── auth/
+│   ├── polling/
+│   ├── services/
+│   └── validation/
+└── e2e/
+    ├── login.spec.ts
+    ├── marketplace.spec.ts
+    ├── documentUpload.spec.ts
+    └── expertValidation.spec.ts
+│
+app/__mocks__/
+└── styleMock.ts
+│
+next.config.ts
+tailwind.config.ts
+tsconfig.json
+jest.config.ts
+playwright.config.ts
+package.json
+.env.example
+.eslintrc.json
+.prettierrc
+.lintstagedrc.json
+.husky/
+└── pre-commit
+```
 
+---
+
+### [State Management](app/state/)
+
+State is split into two categories: **global shared state** managed by Redux Toolkit, and **local UI state** managed by `useState`/`useReducer` inside components. The rule is simple — if more than one component needs the value, it goes into Redux; otherwise it stays local.
+
+#### What goes into Redux
+
+| Slice | File | What it holds |
+|---|---|---|
+| `auth` | [app/state/slices/authSlice.ts](app/state/slices/authSlice.ts) | `isAuthenticated`, `user`, `role`, `accessToken` |
+| `marketplace` | [app/state/slices/marketplaceSlice.ts](app/state/slices/marketplaceSlice.ts) | SME listings, active filters, search query |
+| `certification` | [app/state/slices/certificationSlice.ts](app/state/slices/certificationSlice.ts) | Upload job state: `applicationId`, `status`, `stage` |
+| `validation` | [app/state/slices/validationSlice.ts](app/state/slices/validationSlice.ts) | Expert queue: pending requests, selected request |
+
+#### What stays local
+
+- Form input values (controlled inputs inside a single component)
+- UI toggles: modal open/close, dropdown expanded, loading spinner for a single button
+- Transient error messages that don't need to persist across navigation
+
+#### How to read state
+
+Always use the typed hooks from [app/state/hooks.ts](app/state/hooks.ts) — never import `useSelector` or `useDispatch` directly.
+
+```ts
+import { useAppSelector, useAppDispatch } from "@/state/hooks";
+
+const smes = useAppSelector(
+  state => state.marketplace.smes
+);
+
+const dispatch = useAppDispatch();
+```
+
+#### How to write state
+
+All state writes go through slice actions or async thunks — never mutate state directly outside a slice reducer.
+
+```ts
+dispatch(
+  certificationSlice.actions.certificationStarted(applicationId)
+);
+```
+
+#### How to handle async operations
+
+Use `createAsyncThunk` for any operation that involves an API call. The thunk handles `pending`, `fulfilled`, and `rejected` states automatically.
+
+```ts
+export const fetchSMEs = createAsyncThunk(
+  "marketplace/fetchSMEs",
+  async (filters: SMEFilters) => {
+    return await marketplaceService.getSMEs(filters);
+  }
+);
+```
+Components do not interact with services directly. API operations are orchestrated through feature hooks, which dispatch the corresponding thunks.
+
+State transitions follow the thunk lifecycle:
+
+- `pending` → `loading`
+- `fulfilled` → `succeeded`
+- `rejected` → `failed`
+#### Infrastructure files
+
+| File | Purpose |
+|---|---|
+| [app/state/store.ts](app/state/store.ts) | Configures the Redux store; registers all slices |
+| [app/state/StoreProvider.tsx](app/state/StoreProvider.tsx) | Wraps the app with `<Provider store={store}>` |
+| [app/state/hooks.ts](app/state/hooks.ts) | Exports typed `useAppSelector` and `useAppDispatch` |
+
+---
 
 # Backend Design
