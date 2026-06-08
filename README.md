@@ -442,6 +442,7 @@ State transitions follow the thunk lifecycle:
 - `pending` → `loading`
 - `fulfilled` → `succeeded`
 - `rejected` → `failed`
+
 #### Infrastructure files
 
 | File | Purpose |
@@ -451,5 +452,258 @@ State transitions follow the thunk lifecycle:
 | [app/state/hooks.ts](app/state/hooks.ts) | Exports typed `useAppSelector` and `useAppDispatch` |
 
 ---
+### Async Communication and Polling
+### Storage Considerations
+### Events
+### Observability and Monitoring
+### Data Validation
+### Caching
+### API Consumption and Data Contracts
+### [API Consumption and Data Contracts](app/services/)
+
+The frontend treats the backend OpenAPI specification as the single source of truth for all data contracts. The workflow is: **spec first → generate types → validate at runtime**.
+
+#### OpenAPI Specification
+
+The backend exposes its OpenAPI spec at `GET /swagger/v1/swagger.json` (available in QA; disabled in production). The frontend references this spec to keep DTOs and service contracts in sync.
+
+Spec location (local copy for codegen): [`app/contracts/openapi.json`](app/contracts/openapi.json)
+
+To refresh the local copy from a running QA backend:
+
+```bash
+curl https://qaquietwealth-api.azurewebsites.net/swagger/v1/swagger.json \
+  -o app/contracts/openapi.json
+```
+
+#### Type Generation
+
+Types in [`app/models/`](app/models/) are generated from the OpenAPI spec using `openapi-typescript`. Run this whenever the backend updates its spec:
+
+```bash
+npx openapi-typescript app/contracts/openapi.json --output app/models/api.types.ts
+```
+
+Developers must **never hand-write DTO types** that correspond to a backend endpoint — always regenerate from the spec.
+
+#### Endpoints by Service
+
+| Service | File | Endpoints |
+|---|---|---|
+| Marketplace | [app/services/MarketplaceService.ts](app/services/MarketplaceService.ts) | `GET /api/smes` · `GET /api/smes/{id}` |
+| Trust Record | [app/services/TrustRecordService.ts](app/services/TrustRecordService.ts) | `POST /api/trust-record-applications` · `GET /api/trust-record-applications/{id}/status` |
+| Expert Validation | [app/services/ExpertValidationService.ts](app/services/ExpertValidationService.ts) | `GET /api/validation-queue` · `POST /api/validation-queue/{id}/decision` |
+| Investment | [app/services/InvestmentService.ts](app/services/InvestmentService.ts) | `POST /api/investments` |
+
+#### Runtime Validation with Zod
+
+Even though types are generated at build time, every API response is validated at runtime using the corresponding Zod schema before it reaches Redux state. This catches backend contract drift that TypeScript alone cannot catch at runtime.
+
+```ts
+// TrustRecordService.ts
+import { trustRecordStatusSchema } from "@/validation/smeSchema";
+
+async getStatus(applicationId: string): Promise<TrustRecordStatus> {
+  const response = await httpClient.get(`/api/trust-record-applications/${applicationId}/status`);
+  return trustRecordStatusSchema.parse(response.data);  // throws ContractViolationError on mismatch
+}
+```
+
+A `ContractViolationError` is automatically caught by `ExceptionHandler` and logged to Application Insights with the full raw response for debugging.
+
+#### HTTP Client
+
+All requests go through [app/services/client.ts](app/services/client.ts), which handles:
+- Attaching `Authorization: Bearer <token>` on every protected request
+- Detecting `401` and triggering `sessionManager.handleUnauthorized()`
+- Delegating unhandled errors to `ExceptionHandler`
+
+Developers must never call `fetch` or `axios` directly — always use the injected HTTP facade via `useApplicationServices().http`.
+
+---
+### Performance Optimization
+
+## 1.8 Testing
+### Unit Testing (Jest)
+
+| Folder | What is tested |
+|---|---|
+| [app/__tests__/unit/auth/](app/__tests__/unit/auth/) | `AuthFacade`, `hasPermission`, `getMissingPermissions`, `MicrosoftProfileAdapter` |
+| [app/__tests__/unit/polling/](app/__tests__/unit/polling/) | `PollingOrchestrator` state transitions, `FixedIntervalStrategy`, `ExponentialBackoffStrategy` |
+| [app/__tests__/unit/services/](app/__tests__/unit/services/) | `MarketplaceService`, `TrustRecordService`, `ExpertValidationService` — with `HttpClientFacade` mocked |
+| [app/__tests__/unit/validation/](app/__tests__/unit/validation/) | Zod schemas: valid payloads pass, invalid payloads produce expected error shapes |
+
+Testing rules per unit:
+- Verify expected behavior and outputs.
+- Cover edge cases (empty, loading, error states).
+- Mock external dependencies.
+- Do not call real APIs, Auth0, or Azure services.
+
+```ts
+// MicrosoftProfileAdapter.test.ts
+it("maps Entra ID oid to userId", () => {
+  const adapter = new MicrosoftProfileAdapter();
+  const dto = adapter.adapt({ oid: "abc123", preferred_username: "user@corp.com", name: "Jane" });
+  expect(dto.userId).toBe("abc123");
+});
+```
+### Coverage
+
+**Minimum:** 80% statement coverage on `app/auth/`, `app/polling/`, `app/services/`, `app/validation/`.
+
+```ts
+// jest.config.ts
+coverageThreshold: {
+  "app/auth/**":       { statements: 80 },
+  "app/polling/**":    { statements: 80 },
+  "app/services/**":   { statements: 80 },
+  "app/validation/**": { statements: 80 },
+},
+```
+
+Coverage report published as a GitHub Actions artifact on every CI run. PRs that drop below threshold are blocked by the quality gate.
+
+---
+### Integration Testing (Playwright + msw)
+Playwright tests run against a local Next.js dev server. The backend is mocked with `msw` handlers; Auth0 is bypassed via a test token fixture injected into the Redux store.
+
+#### Where to put test files
+
+```
+app/__tests__/e2e/
+├── login.spec.ts
+├── marketplace.spec.ts
+├── document-upload.spec.ts
+└── expert-validation.spec.ts
+```
+
+All E2E tests live under `app/__tests__/e2e/`. One file per business flow. Do not place test files next to the components they test — that folder is for unit tests only.
+
+#### File naming standard
+
+| Pattern | Example |
+|---|---|
+| One file per business flow | `marketplace.spec.ts` |
+| Kebab-case for multi-word flows | `document-upload.spec.ts` |
+| Fixtures and helpers | `app/__tests__/fixtures/auth.ts` |
+| Page Object Models | `app/__tests__/e2e/pages/MarketplacePage.ts` |
+
+#### How to write a test case
+
+Each test file follows this structure:
+
+```ts
+// app/__tests__/e2e/marketplace.spec.ts
+import { test, expect } from "@playwright/test";
+import { injectAuthSession } from "../fixtures/auth";
+import { MarketplacePOM } from "./pages/MarketplacePage";
+
+test.describe("Marketplace", () => {
+  test.beforeEach(async ({ page }) => {
+    await injectAuthSession(page, { role: "investor" });
+    await page.goto("/marketplace");
+  });
+
+  test("displays SME cards after loading", async ({ page }) => {
+    const marketplace = new MarketplacePOM(page);
+    await marketplace.waitForCards();
+    expect(await marketplace.cardCount()).toBeGreaterThan(0);
+  });
+
+  test("filters by sector", async ({ page }) => {
+    const marketplace = new MarketplacePOM(page);
+    await marketplace.selectSector("Technology");
+    const cards = await marketplace.getVisibleCards();
+    expect(cards.every(c => c.sector === "Technology")).toBe(true);
+  });
+});
+```
+
+Rules:
+- Use `test.describe` to group related cases under the same flow.
+- Use `test.beforeEach` to set up auth and navigation — never repeat these inside individual tests.
+- Each `test()` block tests **one observable behavior**, not an entire journey.
+- Name tests as plain sentences describing what the user sees or can do: `"displays SME cards after loading"`, not `"test marketplace loads"`.
+
+#### Page Object Model (POM)
+
+Every screen gets a Page Object Model in `app/__tests__/e2e/pages/`. POMs encapsulate selectors and interactions so test cases stay readable and locators are maintained in one place.
+
+```ts
+// app/__tests__/e2e/pages/MarketplacePage.ts
+import { Page } from "@playwright/test";
+
+export class MarketplacePOM {
+  constructor(private page: Page) {}
+
+  async waitForCards() {
+    await this.page.waitForSelector("[data-testid='sme-card']");
+  }
+
+  async cardCount() {
+    return this.page.locator("[data-testid='sme-card']").count();
+  }
+}
+```
+Rule: **all `data-testid` attributes are defined in the component**, not hardcoded strings in test files. Add `data-testid` to any element that a test needs to target.
+
+#### Auth fixture
+
+Auth0 is never called in tests. Use the shared fixture to inject a session directly:
+
+```ts
+// marketplace.spec.ts
+await injectAuthSession(page, {
+  role: "investor"
+});
+```
+The `SessionProvider` reads `window.__TEST_AUTH__` when present and skips the Auth0 flow. Never mock Auth0 responses directly in test files.
+
+#### Backend mock with msw
+
+API calls are intercepted by `msw`. Handlers live in `app/__tests__/mocks/handlers.ts`:
+
+```ts
+// app/__tests__/mocks/handlers.ts
+import { http, HttpResponse } from "msw";
+import { smeListFixture } from "../fixtures/sme";
+
+export const handlers = [
+  http.get("/api/smes", () =>
+    HttpResponse.json(smeListFixture)
+  ),
+];
+```
+
+To override a handler for a specific test (e.g. to simulate an error):
+
+```ts
+test("shows error banner when API fails", async ({ page }) => {
+  await page.route("**/api/smes", route => route.fulfill({ status: 500 }));
+  await page.goto("/marketplace");
+  await expect(page.getByTestId("error-banner")).toBeVisible();
+});
+```
+#### Configuration
+
+`playwright.config.ts` — Chromium and Firefox projects, `baseURL` from `PLAYWRIGHT_BASE_URL` env var, screenshot on failure, 2 retries on CI.
+
+```ts
+export default defineConfig({
+  projects: [
+    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    { name: "firefox",  use: { ...devices["Desktop Firefox"] } },
+  ],
+  use: { baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000" },
+  retries: process.env.CI ? 2 : 0,
+  reporter: [["html"], ["github"]],
+});
+```
+
+Run locally: `npx playwright test` · Run single file: `npx playwright test marketplace.spec.ts` · Open UI mode: `npx playwright test --ui`
+
+## 1.9 CI/CD(jose)
+
+## 1.10 Architecture Diagrams (C4)
 
 # Backend Design
