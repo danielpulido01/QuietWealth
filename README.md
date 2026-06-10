@@ -63,7 +63,8 @@ SMEs face slow, bureaucratic processes to certify their financial health, delayi
 2. The system displays the document upload portal with a progress tracker: **Información Cargada → En Revisión por Expertos → Certificación Emitida**.
 3. The user drags and drops files into the upload area or clicks **Seleccionar Archivos** to browse.
 4. The system validates file formats (PDF, DOC, XLS, image) and size (max 10 MB per file) client-side via Zod before upload.
-5. Once uploaded, documents enter the expert review queue automatically. The frontend sends `POST /api/trust-record-applications` and receives `HTTP 202 Accepted`.
+5. The frontend requests upload permission and receives a short-lived SAS URL from the backend.
+6. React uploads the file directly to Azure Blob Storage; Blob events trigger asynchronous processing and the UI tracks `Pending`, `Processing`, `Completed`, or `Failed`.
 
 ---
 
@@ -1255,7 +1256,11 @@ classDiagram
 - API gateway and hosting: Azure API Management + Azure App Service
 - Database: Azure SQL Database
 - File storage: Azure Blob Storage
-- Asynchronous operations and notifications: Azure Notification Hubs
+- Blob archival: Azure Blob Lifecycle Management for Cool, Cold, and Archive tier transitions
+- SQL archival orchestration: Azure Data Factory or scheduled .NET/Azure Function export process
+- Cache: Azure Managed Redis
+- Asynchronous document processing: Azure Blob Storage events via Azure Event Grid, Azure Queue Storage, and Azure Function Queue Trigger
+- Notifications: Azure Notification Hubs
 - Load balancing: no dedicated load balancer required for the expected traffic profile
 - Backend framework and language: .NET SDK 10.0.102, ASP.NET Core
 - Repository structure: monorepo shared with the frontend; backend folder: [`server/QuietWealth.Backend`](/server/QuietWealth.Backend) (AGREGAR si cambia la estructura final)
@@ -1345,6 +1350,12 @@ classDiagram
 - Azure App Service (API hosting)
 - Azure SQL Database
 - Azure Blob Storage
+- Azure Blob Lifecycle Management rules
+- Azure Managed Redis
+- Azure Event Grid
+- Azure Queue Storage
+- Azure Functions
+- Azure Data Factory
 - Azure Notification Hubs
 - Observability resources (Application Insights / Azure Monitor where applicable)
 
@@ -1426,15 +1437,13 @@ Errors: `401 Unauthorized` for invalid or expired tokens, `403 Forbidden` for mi
 ---
 
 ### SME document intake
-1. The SME sends files to [`DocumentIntakeController`](/server/QuietWealth.Backend/domains/document-intake/controllers/DocumentIntakeController.cs).
-2. The backend checks `files.upload` permission and validates [`UploadFilesRequest`](/server/QuietWealth.Backend/domains/document-intake/models/UploadFilesRequest.cs).
-3. Files are validated by format and size.
-4. `DocumentIntakeService` creates a `DocumentBatch` with `SourceDocument` records.
-5. Metadata is saved through [`IDocumentBatchRepository`](/server/QuietWealth.Backend/domains/document-intake/repositories/IDocumentBatchRepository.cs).
-6. File content is stored in Azure Blob Storage.
-7. The batch becomes `uploaded` or `rejected`.
-8. The backend emits `FilesUploadStarted`, `FilesUploadCompleted`, or `FilesUploadRejected`.
-9. The backend returns `UploadFilesResponse`.
+1. React requests upload permission from [`DocumentIntakeController`](/server/QuietWealth.Backend/domains/document-intake/controllers/DocumentIntakeController.cs).
+2. The .NET backend validates the user, checks `files.upload`, creates `DocumentBatch` / `SourceDocument` metadata, and generates a short-lived SAS upload URL.
+3. React uploads the file directly to the Azure Blob Storage container using the SAS URL.
+4. Azure Blob Storage emits a file-created event after the blob is written.
+5. Azure Event Grid, Blob Trigger, or Queue routes the event to an Azure Function.
+6. The Azure Function processes the file, validates checksum/metadata, and updates Azure SQL with status: `Pending`, `Processing`, `Completed`, or `Failed`.
+7. React polls `GET /api/trust-record-applications/{id}/status` or receives a notification through Azure Notification Hubs about the upload/certification status change. Azure Notification Hubs is used only to notify users about upload or certification status changes; Azure Blob events and Azure Function handle document processing.
 
 Errors: `400 Bad Request` for invalid files, `413 Payload Too Large` for oversized uploads, `503 Service Unavailable` for storage failures.
 
@@ -1458,10 +1467,12 @@ Errors: `403 Forbidden` for non-experts, `409 Conflict` for finalized batches, `
 ### Investment marketplace browsing
 1. The investor requests the marketplace list.
 2. The backend validates session and marketplace read permission.
-3. The backend queries only SMEs with active certification.
-4. Optional filters are applied: sector, trust level, growth, capital raised, and search text.
-5. The backend returns paginated card data: company, sector, badge, growth, raised capital, investors, and trust level.
-6. Financial documents are never returned in list responses.
+3. The backend checks Azure Managed Redis using filter, search, page, and sort parameters as the cache key.
+4. On cache hit, the backend returns cached paginated card data.
+5. On cache miss, the backend queries only SMEs with active certification and applies optional filters: sector, trust level, growth, capital raised, and search text.
+6. The backend stores the result in cache with a short TTL and invalidates it when certification status or marketplace metrics change.
+7. The backend returns paginated card data: company, sector, badge, growth, raised capital, investors, and trust level.
+8. Financial documents are never returned in list responses.
 
 Errors: `400 Bad Request` for invalid filters, `200 OK` with empty list for no results, `503 Service Unavailable` for read model failures.
 
@@ -1482,21 +1493,26 @@ Errors: `404 Not Found` for missing or non-visible SMEs, `403 Forbidden` for res
 ### Audit and observability event capture
 1. Domain services emit events for meaningful business transitions.
 2. Events include correlation id, actor id, timestamp, event type, aggregate id, and safe metadata.
-3. Audit entries are saved through [`IAuditEntryRepository`](/server/QuietWealth.Backend/domains/audit-observability/repositories/IAuditEntryRepository.cs).
-4. Logs and traces are sent to Azure Application Insights.
-5. Azure Monitor tracks authentication, uploads, validation decisions, failures, and dependency health.
+3. Audit entries are saved through [`IAuditEntryRepository`](/server/QuietWealth.Backend/domains/audit-observability/repositories/IAuditEntryRepository.cs) in the same transaction as the business state change.
+4. A matching `OutboxMessage` is inserted into `outbox_messages` with `status = pending`, `retry_count = 0`, aggregate reference, payload JSON, and correlation id.
+5. An outbox publisher worker reads pending messages, sends logs/traces to Azure Application Insights, and marks successful messages as `published`.
+6. If publishing fails, the worker increments `retry_count`, keeps the message pending, and retries with exponential backoff.
+7. Messages that exceed the retry limit are marked `failed`, logged as operational incidents, and kept for manual replay or investigation.
+8. Azure Monitor tracks authentication, uploads, validation decisions, failures, outbox age, retry count, and failed-message count.
 
-Errors: audit failures are logged as operational incidents and retried through outbox when possible.
+Errors: audit persistence failures fail the current transaction; telemetry publishing failures do not block the user flow because they are retried through `outbox_messages`.
 
 ---
 
 ### Data retention and archival
-1. A scheduled job identifies records older than the active retention window.
-2. The service applies [`RetentionPolicyOptions`](/server/QuietWealth.Backend/shared/Configuration/RetentionPolicyOptions.cs).
-3. Eligible SQL records and Blob artifacts are moved to archival state.
-4. Archive metadata stores status, location, timestamp, and retention category.
-5. Links between SMEs, documents, certifications, and audit entries are preserved.
-6. The backend emits `RecordsArchived`.
+1. Blob artifacts already stored in Azure Blob Storage are governed by Azure Blob Lifecycle Management.
+2. Blob lifecycle rules move eligible files automatically from Hot to Cool, Cold, or Archive tier based on retention age and policy.
+3. Old structured records in Azure SQL are identified using [`RetentionPolicyOptions`](/server/QuietWealth.Backend/shared/Configuration/RetentionPolicyOptions.cs).
+4. Azure Data Factory or a scheduled .NET/Azure Function export process moves eligible SQL data to archive files in Azure Blob Storage.
+5. After SQL data is exported, Blob Lifecycle Management moves those archived files to the Archive tier.
+6. Archive metadata stores status, location, timestamp, retention category, and legal-hold state.
+7. Links between SMEs, documents, certifications, and audit entries are preserved.
+8. The backend emits `RecordsArchived`.
 
 Errors: legal-hold records are skipped, partial failures are resumable, archive operations must be idempotent.
 
@@ -2159,7 +2175,7 @@ Table outbox_messages {
 `audit_entries.aggregate_type + aggregate_id`, `retention_records.artifact_type + artifact_id`, and `outbox_messages.aggregate_type + aggregate_id` are polymorphic references. They intentionally do not use physical foreign keys because they can point to records from multiple bounded contexts. Referential integrity is enforced in domain services and covered by repository tests.
 
 ## Data integrity rules
-- A `SourceDocument` cannot be marked as `uploaded` without `blob_path` and `checksum`; rejected files keep `upload_status = rejected`.
+- A `SourceDocument` cannot be marked as `Completed` without `blob_path` and `checksum`; failed files keep `upload_status = Failed` and an error reason.
 - A `DocumentBatch` can move to review only when at least one valid `SourceDocument` exists.
 - A `CertificationReview` can be created only for an existing `DocumentBatch`.
 - Only SMEs with approved certification can appear in `MarketplaceListing`.
