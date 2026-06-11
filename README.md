@@ -414,15 +414,268 @@ export const SMECard = memo(function SMECard({ sme }: SMECardProps) {
 
 ---
 
-## 1.4 Security 
+## 1.4 Security
+
 ### 1.4.1 Technologies
+- Auth0 React SDK `2.2` (OAuth 2.0 Authorization Code + PKCE with Microsoft Entra ID federation)
+- JWT bearer tokens for protected API requests
+- Zod for client-side form and API response validation
+- Axios interceptors for centralized token attachment and 401 handling
+
 ### 1.4.2 Authentication
+
+QuietWealth delegates authentication to **Auth0** as a federated Identity Broker supporting **Microsoft Entra ID** exclusively. This keeps the identity surface minimal for a financial platform where all users are expected to have corporate Microsoft accounts.
+
+**Auth Flow:**
+1. User selects **Continue with Microsoft**.
+2. Frontend redirects to Auth0 Universal Login.
+3. Auth0 federates with Microsoft Entra ID.
+4. Microsoft authenticates the user and returns an authorization code to Auth0.
+5. Auth0 forwards the code to `AUTH0_CALLBACK_URL`.
+6. Backend validates JWT and ID Token; internal session is created; user gains access.
+
+**Identity provider:**
+
+| Provider | Supported | Reason |
+|---|---|---|
+| Microsoft Entra ID | Yes | OAuth 2.0 Authorization Code + PKCE via Auth0 federation |
+| Google | No | Out of scope — QuietWealth targets corporate SME users and investors with Microsoft organizational accounts |
+
+**Auth0 Configuration Parameters:**
+
+| Parameter | Storage |
+|---|---|
+| `AUTH0_DOMAIN` | Azure Key Vault (prod/qa) · `.env` (local) |
+| `AUTH0_CLIENT_ID` | Azure Key Vault (prod/qa) · `.env` (local) |
+| `AUTH0_CLIENT_SECRET` | Azure Key Vault (prod/qa) · `.env` (local) — backend only |
+| `AUTH0_CALLBACK_URL` | Azure Key Vault (prod/qa) · `.env` (local) |
+| `AUTH0_AUDIENCE` | Azure Key Vault (prod/qa) · `.env` (local) |
+
+**MFA:** Managed by Auth0 Adaptive MFA. Supported second factors: Authenticator app (TOTP), SMS OTP, Email OTP. Enforced for all roles.
+
+**Auth facade ([app/auth/AuthFacade.ts](app/auth/AuthFacade.ts)):**
+
+```ts
+export class AuthFacade {
+  private static instance: AuthFacade | null = null;
+  static getInstance(): AuthFacade { ... }
+  private constructor() {}
+
+  async login(): Promise<void> { /* redirects to Auth0 Universal Login → Microsoft */ }
+  async logout(): Promise<void> { /* invalidates session locally and on Auth0 */ }
+  async getAccessToken(): Promise<string> { /* getAccessTokenSilently() with auto-refresh */ }
+  getSession(): UserSessionDTO | null { /* returns current in-memory session */ }
+}
+export const authFacade = AuthFacade.getInstance();
+```
+
+**Profile adapter** normalizes Microsoft Entra ID claims (forwarded by Auth0) into `UserSessionDTO`:
+
+```ts
+// app/auth/adapters/MicrosoftProfileAdapter.ts
+export class MicrosoftProfileAdapter {
+  adapt(rawClaims: MicrosoftClaims): UserSessionDTO {
+    return {
+      userId:      rawClaims.oid,
+      email:       rawClaims.preferred_username,
+      displayName: rawClaims.name,
+      role:        this.resolveRole(rawClaims),
+      accessToken: rawClaims.access_token,
+      expiresAt:   rawClaims.exp,
+    };
+  }
+}
+```
+
+**JWT contents:**
+
+| Claim | Description |
+|---|---|
+| `sub` | User identifier (Auth0 user ID) |
+| `email` | Corporate email from Microsoft Entra ID |
+| `name` | Display name |
+| `roles` | Array of platform roles (e.g., `["investor"]`) |
+| `permissions` | Array of granted permission codes |
+| `aud` | `AUTH0_AUDIENCE` (API identifier) |
+| `iss` | Auth0 domain |
+| `exp` | Expiry timestamp |
+| `iat` | Issued-at timestamp |
+
+Estimated JWT payload size: **< 2 KB**. Well below the 10 KB threshold given the minimal claim set.
+
+**Token management:**
+
+| Aspect | Configuration |
+|---|---|
+| Access token expiry | 60 minutes |
+| Refresh token rotation | Enabled — each use issues a new refresh token |
+| Silent refresh | `getAccessTokenSilently()` called by Auth0 SDK before expiry |
+| Token storage | Access tokens in memory only (Redux); refresh token in `HttpOnly`, `Secure`, `SameSite=Strict` cookie — inaccessible to JavaScript |
+| Logout | `logout({ returnTo: window.location.origin })` — clears session locally and on Auth0 |
+
+**Session expiration:** When backend returns `401`, the Axios interceptor in [app/services/httpInterceptors.ts](app/services/httpInterceptors.ts) clears the in-memory session via `sessionManager.handleUnauthorized()` and redirects to login with a session-expired message.
+
+**Auth latency:** Auth0 authentication with Microsoft Entra ID takes 1–5 seconds. A loading spinner is displayed immediately when the user clicks **Continue with Microsoft** and persists until the callback resolves, preventing repeated clicks and providing clear feedback.
+
+**Auth audit queue ([app/auth/AuthAuditQueue.ts](app/auth/AuthAuditQueue.ts)):** Batches auth events (login, logout, token refresh, permission denial) and dispatches asynchronously to Application Insights to prevent auth flow delays caused by logging I/O.
+
 ### 1.4.3 Authorization
+
+#### Roles
+[app/auth/policies/roles.ts](app/auth/policies/roles.ts)
+
+| Code | Description |
+|---|---|
+| `investor` | Browses the Marketplace, views investment details, initiates investment flow |
+| `sme_owner` | Uploads financial documents, tracks certification status |
+| `financial_analyst` | Reviews pending certification requests, issues certification decisions |
+| `sys_admin` | Full system access including user management, audit logs, system configuration |
+
+#### Permissions
+[app/auth/policies/permissions.ts](app/auth/policies/permissions.ts)
+
+| Code | Description |
+|---|---|
+| `auth.login` / `auth.logout` | Session start/end |
+| `session.read` | Access authenticated screens |
+| `marketplace.browse` | View the investment marketplace and SME listings |
+| `investment.detail.view` | View full investment detail screen |
+| `investment.initiate` | Click "Invertir Ahora" and enter the investment flow |
+| `documents.upload` | Upload financial documents for certification |
+| `documents.status.read` | Track document review and certification status |
+| `validation.queue.read` | View the pending certification queue (expert panel) |
+| `validation.certify` | Issue certification decisions on SME applications |
+| `audit_log.read` | View audit trail |
+| `users.admin` / `roles.admin` / `system.config` | `sys_admin` only |
+
+#### Role-Permission Mapping
+[app/auth/policies/rolePermissions.ts](app/auth/policies/rolePermissions.ts)
+
+| Role | Permissions |
+|---|---|
+| `investor` | `auth.login`, `auth.logout`, `session.read`, `marketplace.browse`, `investment.detail.view`, `investment.initiate` |
+| `sme_owner` | `auth.login`, `auth.logout`, `session.read`, `documents.upload`, `documents.status.read` |
+| `financial_analyst` | `auth.login`, `auth.logout`, `session.read`, `validation.queue.read`, `validation.certify`, `audit_log.read` |
+| `sys_admin` | All permissions |
+
+#### Access Policies
+[app/auth/policies/accessPolicy.ts](app/auth/policies/accessPolicy.ts)
+
+| Policy | Required Permissions |
+|---|---|
+| `canBrowseMarketplace` | `marketplace.browse` |
+| `canViewInvestmentDetail` | `investment.detail.view` |
+| `canInitiateInvestment` | `investment.initiate` |
+| `canUploadDocuments` | `documents.upload` |
+| `canTrackCertification` | `documents.status.read` |
+| `canAccessValidationQueue` | `validation.queue.read` |
+| `canCertifySME` | `validation.certify` |
+| `canReadAuditLog` | `audit_log.read` |
+| `canManageSystem` | `users.admin`, `roles.admin`, `system.config` |
+
+#### Routing Protection
+[app/auth/guards/](app/auth/guards/)
+
+**AuthGuard** — prevents unauthenticated access:
+```tsx
+<AuthGuard>
+  <DashboardLayout><MarketplacePage /></DashboardLayout>
+</AuthGuard>
+```
+
+**GuestGuard** — prevents authenticated users from accessing public routes:
+```tsx
+<GuestGuard><LoginPage /></GuestGuard>
+```
+
+**PolicyGuard** — blocks a route when the user lacks required permissions:
+```tsx
+<AuthGuard>
+  <PolicyGuard required={accessPolicy.canCertifySME}>
+    <ExpertValidationPage />
+  </PolicyGuard>
+</AuthGuard>
+```
+
+#### Usage Rules
+Developers must never write:
+```ts
+if (user.role === "financial_analyst")  //Wrong
+```
+Instead:
+```ts
+const { hasAccess } = usePolicies();
+{hasAccess("canCertifySME") && <CertifyButton />} //Correct
+```
+
+**`hasAccess`** — use when all required permissions must be held (default for all actions).
+
+**`hasSomeAccess`** — use when a section can still render with partial access (dashboards, grouped menus).
+
+**`getMissingPermissions`** — use in admin/debug screens or access-denied messages.
+
 ### 1.4.4 Encryption and Data Privacy
+
+**In transit:**
+- All browser-to-Azure App Service communication is enforced over **HTTPS / TLS 1.3**. HTTP requests are rejected with a `301` redirect.
+- `Strict-Transport-Security` header: `max-age=31536000; includeSubDomains`.
+- Auth0 token exchange exclusively over HTTPS.
+
+**Tokens:**
+- Access tokens stored **in memory only** (Redux). Never written to `localStorage`, `sessionStorage`, or any browser-persistent storage.
+- Refresh tokens in an **`HttpOnly`, `Secure`, `SameSite=Strict` cookie** managed by Auth0 SDK — inaccessible to JavaScript.
+
+**Sensitive data in the DOM:**
+- Financial figures (capital amounts, ROI values) for SMEs without `CERTIFIED` status are masked until the certification is validated server-side.
+- A dedicated [`MaskedValue`](app/components/atoms/MaskedValue/MaskedValue.tsx) atom handles rendering:
+
+```tsx
+export function MaskedValue({ value, visible }: { value: string; visible: boolean }) {
+  return <span aria-hidden={!visible}>{visible ? value : "••••••••"}</span>;
+}
+
+// Usage in InvestmentDetailPanel
+const { hasAccess } = usePolicies();
+<MaskedValue value={sme.revenueAmount} visible={hasAccess("canViewInvestmentDetail")} />
+```
+
+**Secrets management:**
+- Auth0 credentials sourced from **Azure Key Vault** at runtime via [app/settings/Settings.ts](app/settings/Settings.ts).
+- `.env.example` documents required variable names with placeholder values; no credentials in source control.
+- The `Logger` singleton strips any object key matching `/token|secret|password|key/i` before emitting to Application Insights.
+
+**Privacy:**
+- No document content is cached on the client. Uploaded file bytes are streamed directly to the backend.
+- CSRF protection via the Auth0 `state` parameter, which is validated on the callback before the authorization code is exchanged.
+- 
 ### 1.4.5 API Communication
+
+All HTTP calls go through the centralized HTTP facade. Interceptors in [app/services/httpInterceptors.ts](app/services/httpInterceptors.ts) handle:
+- Attaching `Authorization: Bearer <token>` on every protected request.
+- Detecting `401` and triggering `sessionManager.handleUnauthorized()`.
+- Zod schema validation on every API response before data reaches Redux state.
+
 ### 1.4.6 Storage Rules
+
+| Storage | Allowed Use |
+|---|---|
+| Memory (Redux) | Active session token, marketplace data, current certification status |
+| Auth0 `HttpOnly` cookie | Refresh token — managed by Auth0 SDK, inaccessible to JavaScript |
+| `localStorage` | UI preferences only (theme, language) |
+| `sessionStorage` | Not used |
+
+```ts
+localStorage.setItem("theme", "dark");       // Allowed
+// localStorage.setItem("accessToken", t);  // Forbidden
+```
+
 ### 1.4.7 Data Masking
 
+Financial values that are sensitive or certification-gated are masked at the component level using `MaskedValue`. Full values are rendered only when:
+1. The user's JWT carries the required permission scope.
+2. The backend has verified the scope server-side before returning the data.
+
+Client-side masking is a UX layer only — the real enforcement is the API returning masked or null values for unauthorized callers.
 
 ## 1.4.8 OWASP Mitigations
 
@@ -755,32 +1008,145 @@ ExceptionHandler --> Logger
 
 ---
 
-## Broken Links Policy
-
-To avoid broken links in the README, documentation must follow one of these two rules:
-
-1. Use a markdown link only when the referenced file already exists in the repository.
-2. If the file is part of the proposed scaffold but has not been created yet, write the path in backticks instead of using a link.
-
-Correct:
-
-```md
-`app/auth/AuthFacade.ts`
-```
-
-Incorrect when the file does not exist yet:
-
-```md
-[app/auth/AuthFacade.ts](app/auth/AuthFacade.ts)
-```
-
-Before submitting the documentation, the team must run a link check or manually verify every local markdown link that points to `app/`, `server/`, `infra/`, or `Media/`.
-
-
-
-
-## 1.5 Layered Design
 ## 1.6 Design Patterns
+
+### Singleton
+Applied to classes that must have exactly one shared instance app-wide.
+
+| Class | File |
+|---|---|
+| `Logger` | [app/utils/logger.ts](app/utils/logger.ts) |
+| `ExceptionHandler` | [app/utils/error-handler.ts](app/utils/error-handler.ts) |
+| `AuthFacade` | [app/auth/AuthFacade.ts](app/auth/AuthFacade.ts) |
+| `SessionManager` | [app/state/sessionManager.ts](app/state/sessionManager.ts) |
+| `CertificationPollingStore` | [app/state/certificationPollingStore.ts](app/state/certificationPollingStore.ts) |
+| `DefaultHttpClientFacade` | [app/services/client.ts](app/services/client.ts) |
+| `DefaultApplicationServiceFacade` | [app/services/applicationFacade.ts](app/services/applicationFacade.ts) |
+
+**Implementation recipe:**
+```ts
+export class MyService {
+  private static instance: MyService | null = null;
+  static getInstance(): MyService {
+    if (!MyService.instance) MyService.instance = new MyService();
+    return MyService.instance;
+  }
+  private constructor() {}
+}
+export const myService = MyService.getInstance();
+```
+
+---
+
+### Observer (Certification Status Tracking)
+Used for the document upload certification progress, which is a long-running async process.
+
+Reference files:
+- [app/state/certification.types.ts](app/state/certification.types.ts)
+- [app/state/certificationPollingStore.ts](app/state/certificationPollingStore.ts)
+- [app/state/certificationPollingManager.ts](app/state/certificationPollingManager.ts)
+- [app/components/hooks/useCertificationProgress.ts](app/components/hooks/useCertificationProgress.ts)
+- [app/components/hooks/useDocumentUpload.ts](app/components/hooks/useDocumentUpload.ts)
+
+**Observable Store contract:**
+```ts
+class CertificationPollingStore {
+  private listeners = new Set<Listener<CertificationState>>();
+  private state: CertificationState = createInitialState();
+  getState()  { return this.state; }
+  subscribe(listener: Listener<CertificationState>) {
+    this.listeners.add(listener);
+    listener(this.state);           // emit immediately on subscribe
+    return () => this.listeners.delete(listener);
+  }
+  patchState(partial: Partial<CertificationState>) {
+    this.state = { ...this.state, ...partial };
+    for (const l of this.listeners) l(this.state);
+  }
+}
+```
+
+**Subscriber hook:**
+```ts
+function useCertificationProgress() {
+  const [state, setState] = useState(() => certificationPollingManager.getSnapshot());
+  useEffect(() => certificationPollingManager.subscribe(setState), []);
+  return state;  // no business logic here
+}
+```
+
+**Manager (non-blocking kickoff):**
+```ts
+async function startPolling(applicationId: string) {
+  store.patchState({ runState: "polling", applicationId });
+  void runPollingLoop(applicationId);  // non-blocking
+}
+```
+
+---
+
+### Facade (Auth + Application Services)
+[app/auth/AuthFacade.ts](app/auth/AuthFacade.ts) · [app/services/applicationFacade.ts](app/services/applicationFacade.ts)
+
+```ts
+export interface AuthServiceFacade {
+  login(): Promise<void>;
+  logout(): Promise<void>;
+  getAccessToken(): Promise<string>;
+  getCurrentSession(): Promise<UserSessionDTO | null>;
+}
+
+export interface ApplicationServiceFacade {
+  readonly auth: AuthServiceFacade;
+  readonly http: HttpClientFacade;
+}
+```
+
+Hooks import only `useApplicationServices()` for service access. New domains are added by extending facades, never by importing low-level clients in hooks.
+
+---
+
+### Adapter
+[app/auth/adapters/MicrosoftProfileAdapter.ts](app/auth/adapters/MicrosoftProfileAdapter.ts)
+
+Normalizes Microsoft Entra ID claims forwarded by Auth0 into the internal `UserSessionDTO`. The rest of the application never sees provider-specific claim shapes.
+
+---
+
+### Proxy (Auth Middleware)
+[app/auth/AuthMiddleware.ts](app/auth/AuthMiddleware.ts)
+
+Intercepts every protected API call to validate JWT expiry and trigger silent refresh or logout before the request is dispatched.
+
+---
+
+### Strategy (Polling Interval)
+[app/polling/strategies/](app/polling/strategies/)
+
+```ts
+export interface IPollingStrategy {
+  getInterval(attempt: number): number;  // milliseconds
+}
+
+export class FixedIntervalStrategy implements IPollingStrategy {
+  getInterval(_: number) { return 10_000; }  // 10 s fixed
+}
+
+export class ExponentialBackoffStrategy implements IPollingStrategy {
+  getInterval(attempt: number) { return Math.min(2 ** attempt * 1000, 60_000); }
+}
+```
+
+`PollingOrchestrator` switches to `ExponentialBackoffStrategy` automatically on network errors. After 5 failed attempts it stops and dispatches a connectivity error to the UI.
+
+---
+
+### Queue-Based Logging
+[app/auth/AuthAuditQueue.ts](app/auth/AuthAuditQueue.ts)
+
+Auth events (login, logout, token refresh, permission denial) are enqueued and dispatched asynchronously to Application Insights, preventing auth flow delays caused by synchronous logging I/O.
+
+---
 
 ## 1.7 Project Scaffold
 ```
@@ -1046,12 +1412,144 @@ State transitions follow the thunk lifecycle:
 
 ---
 ### Async Communication and Polling
+
+Document certification is a long-running async process. The frontend polls `GET /api/trust-record-applications/{id}/status` every 10 seconds until the status reaches `CERTIFIED`, `REJECTED`, or `REQUIRES_HUMAN_REVIEW`.
+
+| File | Description |
+|---|---|
+| [app/polling/PollingOrchestrator.ts](app/polling/PollingOrchestrator.ts) | Starts, suspends, and stops the polling loop; dispatches status to `certificationSlice` |
+| [app/polling/strategies/FixedIntervalStrategy.ts](app/polling/strategies/FixedIntervalStrategy.ts) | 10-second fixed interval (normal operation) |
+| [app/polling/strategies/ExponentialBackoffStrategy.ts](app/polling/strategies/ExponentialBackoffStrategy.ts) | Doubles interval on each failure, capped at 60 s; activated on `503` or network error |
+
+---
+
 ### Storage Considerations
+
+| Storage | Usage | Notes |
+|---|---|---|
+| Memory (Redux) | Active session token, marketplace data, certification status | Cleared on tab close |
+| Auth0 `HttpOnly` cookie | Refresh token | Managed by Auth0 SDK; inaccessible to JavaScript |
+| `localStorage` | Theme, language preferences | No tokens, no financial data |
+| `sessionStorage` | Not used | Inconsistent across tabs |
+| WebSockets | Not used in v1 | Polling sufficient for certification lifecycle; WebSocket upgrade documented for v2 if sub-10s notification latency is required |
+
+---
+
 ### Events
+
+The frontend uses two event propagation mechanisms:
+
+**1. Redux dispatch (intra-app state events)**
+
+All meaningful state transitions are Redux actions dispatched through the store.
+
+```ts
+// Dispatched when certification polling detects CERTIFIED
+dispatch(certificationSlice.actions.certificationCompleted({ applicationId, trustScore }));
+
+// Dispatched when expert issues a decision
+dispatch(validationSlice.actions.decisionIssued({ requestId, decision: "approved" }));
+```
+
+**2. Custom DOM events (cross-component out-of-band signaling)**
+
+Used only for UI side-effects (Toast notifications, global loaders) where a service call needs to signal a layout-level component outside React's tree.
+
+```ts
+// app/utils/eventBus.ts
+export const eventBus = {
+  emit<T>(name: string, detail: T) {
+    window.dispatchEvent(new CustomEvent(name, { detail }));
+  },
+  on<T>(name: string, handler: (detail: T) => void) {
+    const listener = (e: Event) => handler((e as CustomEvent<T>).detail);
+    window.addEventListener(name, listener);
+    return () => window.removeEventListener(name, listener);
+  },
+};
+
+// Emit from service layer
+eventBus.emit("toast:show", { message: "Documents submitted successfully", type: "success" });
+
+// Subscribe in Toast organism (mounted once at layout level)
+useEffect(() => eventBus.on("toast:show", setToast), []);
+```
+
+**Rules:**
+- Custom DOM events are only for UI side-effects. Business state always goes through Redux.
+- Event names use `namespace:verb` format (`toast:show`, `session:expired`).
+- Every `on()` subscription must return its cleanup function and be called inside `useEffect`.
+
+---
+
 ### Observability and Monitoring
+
+| File | Description |
+|---|---|
+| [app/utils/logger.ts](app/utils/logger.ts) | Singleton logger — emits `info`, `warn`, `error` to Azure Application Insights |
+| [app/utils/error-handler.ts](app/utils/error-handler.ts) | Singleton — maps HTTP codes to user-facing messages; routes 5xx to App Insights with context |
+
+**Logged frontend events:**
+
+| Event | Trigger |
+|---|---|
+| `AuthLoginStarted` | User selects "Continue with Microsoft" |
+| `AuthLoginCompleted` | Session established after token exchange |
+| `AuthLoginFailed` | Auth0 returns error on callback |
+| `AuthLogoutCompleted` | Logout flow finishes |
+| `DocumentsSubmitted` | `POST /api/trust-record-applications` sent |
+| `CertificationPollingStarted` | `PollingOrchestrator.start()` called |
+| `CertificationStatusChanged` | Any state transition detected by polling |
+| `CertificationCompleted` | Status reaches `CERTIFIED` |
+| `CertificationRejected` | Status reaches `REJECTED` |
+| `ValidationDecisionIssued` | Expert certifies or rejects a request |
+| `InvestmentDetailViewed` | User opens Investment Detail screen |
+| `ApiRequestFailed` | Any HTTP error from `ExceptionHandler` |
+| `ContractViolationError` | Zod schema mismatch on API response |
+| `UnhandledExceptionCaptured` | React error boundary catches render crash |
+
+**Monitoring rules:**
+- Every event includes: `correlationId`, `userId` (hashed), `role`, `timestamp`, `appVersion`.
+- Do not log raw financial values — log only identifiers (`applicationId`, `smeId`).
+- Do not log every polling tick — log only meaningful status transitions and exceptional failures.
+- Application Insights dashboards track: P95/P99 page load times, certification polling success rate, auth error rate, marketplace search latency.
+
+**Error handling:**
+
+| HTTP Status | User-facing behavior |
+|---|---|
+| `400` | Inline form validation error next to the offending field |
+| `401` | Silent token refresh attempted; if it fails, redirect to login with session-expired message |
+| `403` | Toast: "You don't have permission to perform this action" |
+| `404` | Redirect to not-found page |
+| `429` | Toast with retry countdown; `ExponentialBackoffStrategy` activated |
+| `5xx` | Toast with support reference number; polling retries up to 5 times |
+
+---
+
 ### Data Validation
+
+| File | Description |
+|---|---|
+| [app/validation/documentUploadSchema.ts](app/validation/documentUploadSchema.ts) | Validates MIME types (`application/pdf`, `application/vnd.ms-excel`, `image/*`), max 10 MB/file |
+| [app/validation/smeSchema.ts](app/validation/smeSchema.ts) | Validates SME listing and investment detail API response shapes |
+| [app/validation/userSchema.ts](app/validation/userSchema.ts) | Validates user profile shape from Auth0 token claims |
+
+A schema mismatch throws a `ContractViolationError` logged to Application Insights with the full response payload, making backend contract changes immediately visible.
+
+---
+
 ### Caching
-### API Consumption and Data Contracts
+
+| Layer | Strategy |
+|---|---|
+| Marketplace listings | Stored in Redux; cached for 5 minutes before a fresh fetch is triggered |
+| Investment detail | Stored in Redux per `smeId`; invalidated on certification status change |
+| Certification status polling endpoints | `Cache-Control: no-store` — always fresh |
+| Static assets (JS, CSS, SVG) | Content-hash filenames; `max-age=31536000, immutable` via Azure CDN |
+
+---
+
 ### [API Consumption and Data Contracts](app/services/)
 
 The frontend treats the backend OpenAPI specification as the single source of truth for all data contracts. The workflow is: **spec first → generate types → validate at runtime**.
@@ -1114,7 +1612,50 @@ All requests go through [app/services/client.ts](app/services/client.ts), which 
 Developers must never call `fetch` or `axios` directly — always use the injected HTTP facade via `useApplicationServices().http`.
 
 ---
+
 ### Performance Optimization
+**Code splitting:** Next.js App Router splits at route segment level automatically.
+
+**Lazy loading:**
+```tsx
+const InvestmentDetailPage = lazy(() => import("@/components/pages/InvestmentDetailPage"));
+const ExpertValidationPage  = lazy(() => import("@/components/pages/ExpertValidationPage"));
+
+<Suspense fallback={<Spinner />}>
+  <InvestmentDetailPage />
+</Suspense>
+```
+
+**Memoization:**
+```tsx
+export const SMECard = memo(function SMECard({ sme }: SMECardProps) {
+  const formattedGrowth = useMemo(() => formatPercent(sme.growthRate), [sme.growthRate]);
+  const onViewDetails   = useCallback(() => router.push(`/marketplace/${sme.id}`), [sme.id]);
+  return <article onClick={onViewDetails}>...</article>;
+});
+```
+
+**Bundle reduction:**
+- `next-bundle-analyzer` in CI; any chunk exceeding 250 KB fails the pipeline.
+- Lucide React imported as named exports only: `import { TrendingUp, Shield } from "lucide-react"`.
+- TailwindCSS JIT eliminates unused utility classes at build time.
+
+**Image optimization:**
+- Next.js `<Image>` with explicit `width`/`height` for all rasterized assets.
+- Logos served as SVG inline — no raster formats.
+
+**Virtualization:**
+- `react-window` (`FixedSizeList`) applied to the marketplace SME grid and expert validation queue when row count exceeds 100.
+
+```tsx
+import { FixedSizeList } from "react-window";
+
+<FixedSizeList height={600} itemCount={smes.length} itemSize={120} width="100%">
+  {({ index, style }) => <SMECard style={style} sme={smes[index]} />}
+</FixedSizeList>
+```
+
+---
 
 ## 1.8 Testing
 ### Unit Testing (Jest)
@@ -1518,5 +2059,130 @@ API App Service settings provisioned by Bicep:
 
 ---
 ## 1.10 Architecture Diagrams (C4)
+
+### Context Diagram
+
+QuietWealth serves three primary actors: SME owners submit financial documents for certification, financial analysts review and certify submissions, and investors browse certified SMEs in the marketplace. Identity is delegated to **Auth0** federating exclusively with **Microsoft Entra ID**.
+
+```mermaid
+graph TB
+    SME(["👤 SME Owner\nUploads documents, tracks certification"])
+    FA(["👤 Financial Analyst\nReviews and certifies SME applications"])
+    INV(["👤 Investor\nBrowses marketplace, views investment details"])
+    SA(["👤 SYS ADMIN\nSystem configuration"])
+
+    subgraph QW["🖥️ QuietWealth System"]
+        FE["Frontend\nReact SSR / Node.js\nAzure App Service"]
+        BE["Backend API\n(separate service)"]
+    end
+
+    AUTH0(["🔐 Auth0\nIdentity Broker\nMicrosoft Entra ID"])
+    MSFT(["🟦 Microsoft Entra ID"])
+
+    SME -->|"HTTPS — uploads docs, tracks status"| FE
+    FA  -->|"HTTPS — reviews certification queue"| FE
+    INV -->|"HTTPS — browses marketplace"| FE
+    SA  -->|"HTTPS — configuration"| FE
+    FE  <-->|"HTTPS / REST + Bearer JWT"| BE
+    FE  -->|"OAuth 2.0 PKCE / OIDC"| AUTH0
+    AUTH0 -->|"Federation"| MSFT
+```
+
+---
+
+### Container Diagram
+
+```mermaid
+graph TB
+    Browser(["Web Browser\nReact SSR — Node.js 22 / Next.js 15\nAzure App Service"])
+
+    subgraph Azure["Azure Cloud"]
+        CDN["Azure CDN\n— Static asset distribution\n— Cache-Control headers"]
+
+        subgraph FrontendApp["Frontend — Next.js 15 / Node.js 22 · Azure App Service"]
+            AuthLayer["Auth Layer\nAuthFacade · AuthMiddleware\nMicrosoftProfileAdapter · AuditQueue"]
+            UILayer["Components Layer\nAtomic Design — Atoms → Pages\nMarketplace · Upload · Validation · Detail"]
+            ServicesLayer["Services Layer\nMarketplaceService · TrustRecordService\nExpertValidationService · InvestmentService"]
+            PollingLayer["Polling Layer\nPollingOrchestrator · Strategies"]
+            StateLayer["State Layer\nRedux — auth · marketplace · certification · validation"]
+        end
+
+        KeyVault["Azure Key Vault\nAuth0 secrets · API keys"]
+        AppIns["Azure Application Insights\nLogs · Metrics · Traces · Alerts"]
+    end
+
+    Auth0(["Auth0\nIdentity Broker\nMicrosoft Entra ID · OAuth 2.0 PKCE"])
+    BackendAPI(["Backend API\nTrust Record Compilation\n(separate service)"])
+
+    Browser -->|"HTTPS"| CDN
+    CDN --> FrontendApp
+    FrontendApp -->|"OAuth 2.0 PKCE"| Auth0
+    FrontendApp -->|"HTTPS / REST + Bearer JWT"| BackendAPI
+    FrontendApp -->|"Managed Identity"| KeyVault
+    FrontendApp -->|"OpenTelemetry SDK"| AppIns
+```
+
+---
+
+### Code Diagram — Auth Bounded Context
+
+```mermaid
+classDiagram
+    direction TB
+
+    class AuthFacade {
+        <<Facade — Singleton>>
+        -auth0Client Auth0Client
+        +login() Promise~void~
+        +logout() Promise~void~
+        +getAccessToken() Promise~string~
+        +getSession() UserSessionDTO
+        +getInstance() AuthFacade
+    }
+
+    class AuthMiddleware {
+        <<Proxy>>
+        -authFacade AuthFacade
+        +intercept(request) Promise~Request~
+        -refreshTokenIfExpired() Promise~void~
+    }
+
+    class MicrosoftProfileAdapter {
+        <<Adapter>>
+        +adapt(rawClaims MicrosoftClaims) UserSessionDTO
+    }
+
+    class AuthAuditQueue {
+        <<Queue-Based Logging>>
+        -queue AuthEvent[]
+        +enqueue(event AuthEvent) void
+        -flush() Promise~void~
+    }
+
+    class UserSessionDTO {
+        <<DTO>>
+        +userId string
+        +email string
+        +displayName string
+        +role RoleType
+        +accessToken string
+        +expiresAt number
+    }
+
+    class RoleDefinitions {
+        <<Map>>
+        +INVESTOR PermissionCode[]
+        +SME_OWNER PermissionCode[]
+        +FINANCIAL_ANALYST PermissionCode[]
+        +SYS_ADMIN PermissionCode[]
+    }
+
+    AuthFacade --> MicrosoftProfileAdapter
+    AuthFacade --> AuthAuditQueue
+    AuthMiddleware --> AuthFacade
+    MicrosoftProfileAdapter --> UserSessionDTO
+    AuthFacade --> RoleDefinitions
+```
+---
 
 # Backend Design
