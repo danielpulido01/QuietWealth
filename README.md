@@ -94,6 +94,7 @@ SMEs face slow, bureaucratic processes to certify their financial health, delayi
 ---
 
 ## 1.2.2 Wireframes
+
 ### Login Screen
 Microsoft-authenticated entry point to the platform.
 
@@ -166,15 +167,252 @@ A usability test was conducted using Maze. Tests were shared remotely via URL.
 
 ## 1.3 Component Design Strategy
 ### 1.3.1 Strategy
+The frontend follows **Atomic Design** for component architecture.
 ### 1.3.2 Component Hierarchy
+```
+app/
+ ├ components/
+ │   ├ atoms/
+ │   ├ molecules/
+ │   ├ organisms/
+ │   ├ templates/
+ │   ├ pages/
+ │   ├ hooks/
+ │   ├ i18n/
+ │   └ styles/
+```
+
 ### 1.3.3 Component Categories
+
+#### [Atoms](app/components/atoms)
+Reusable low-level UI components with no business logic.
+
+- Must be pure UI — only accept props.
+- No API calls, no business logic.
+- Must support design tokens.
+
+```
+Button · Input · Badge · Spinner · ProgressBar
+TrustIndicator · Label · Card · Toast · Modal · StatCard
+```
+
+Example:
+```tsx
+<Button variant="primary" size="md" loading>
+  Submit Documents
+</Button>
+```
+
+#### [Molecules](app/components/molecules)
+Built from atoms. Handle UI logic; no direct API calls.
+
+```
+DocumentUploader · FormField · StatusBadge · InfoBanner · SMECard · FilterBar
+```
+
+Example:
+```
+SMECard
+ ├ TrustIndicator (certification status)
+ ├ StatCard (growth %, capital raised)
+ └ Button ("Ver Detalles")
+```
+
+#### [Organisms](app/components/organisms)
+Larger layout sections. No business logic — responsible only for composition.
+
+```
+MarketplaceGrid · InvestmentDetailPanel · ValidationQueue
+DocumentUploadZone · Navbar · Sidebar · PageContainer
+```
+
+#### [Pages](app/components/pages)
+Feature-specific components tied to a business process. Coordinate business logic through hooks. Mounted by Next.js App Router.
+
+```
+LoginPage.tsx
+MarketplacePage.tsx
+DocumentUploadPage.tsx
+ExpertValidationPage.tsx
+InvestmentDetailPage.tsx
+```
+
 ### 1.3.4 Component Reuse Strategy
+Before creating a new component, developers must:
+1. Search in [Atoms](app/components/atoms).
+2. Search in [Molecules](app/components/molecules).
+
+If a similar component exists, extend it via props, variants, or composition — never duplicate.
+
+```tsx
+<TrustIndicator level="certified" />
+<TrustIndicator level="pending" />
+<TrustIndicator level="rejected" />
+```
+
 ### 1.3.5 [Hooks]
+Components use hooks for all business logic. Hooks interact with services and state managers.
+
+```
+useAuth()
+useMarketplace()
+useDocumentUpload()
+useExpertValidation()
+useInvestmentDetail()
+usePermissions()
+usePolicies()
+useSession()
+useApplicationServices()
+```
+
 ### 1.3.6 Naming conventions
+
+| Element | Convention | Example |
+|---|---|---|
+| Component files | `PascalCase` | `SMECard.tsx` |
+| Component folders | `PascalCase` | `SMECard/` |
+| Page files | `PascalCase` + `Page` suffix | `MarketplacePage.tsx` |
+| Hook files | `camelCase` prefixed with `use` | `useMarketplace.ts` |
+| Service files | `PascalCase` + `Service` suffix | `TrustRecordService.ts` |
+| Redux slices | `camelCase` + `Slice` suffix | `marketplaceSlice.ts` |
+| Zod schemas | `camelCase` + `Schema` suffix | `documentUploadSchema.ts` |
+| Type/interface files | `PascalCase` or `camelCase.types.ts` | `session.types.ts` |
+| CSS module files | `camelCase.module.css` matching component | `smeCard.module.css` |
+| Tailwind utilities | Token-based CSS vars only | `text-[var(--qw-navy)]` |
+| Constants | `SCREAMING_SNAKE_CASE` | `MAX_UPLOAD_FILE_SIZE_MB` |
+| DTOs | `PascalCase` + `DTO` suffix | `TrustRecordApplicationDTO` |
+| Enums | `PascalCase` values | `CertificationStatus.PENDING` |
+| Test files | Mirror source path + `.test.ts(x)` or `.spec.ts` | `AuthFacade.test.ts` |
+| i18n keys | `dot.separated.camelCase` | `marketplace.filter.sector` |
+| Folder names (non-component) | `kebab-case` | `app/auth/` · `investment-detail/` |
+
 ### 1.3.7 Styles and Design Tokens
+All visual styles are centralized in [tokens.ts](app/components/styles/tokens.ts):
+
+```ts
+export const colors = {
+  primary:    "#0D1F3C",   // QW Navy — headings, navbar background
+  accent:     "#1AACA8",   // QW Teal — CTA buttons, active states
+  gold:       "#C8972B",   // QW Gold — trust score highlights, certified badges
+  background: "#F5F7FA",   // Off-white page background
+  surface:    "#FFFFFF",   // Card and modal surfaces
+  slate:      "#4A5568",   // Body text, secondary labels
+  success:    "#22C55E",   // Certified, low-risk
+  warning:    "#F59E0B",   // Pending review, medium-risk
+  error:      "#EF4444",   // Rejected, high-risk, validation errors
+};
+
+export const spacing = { sm: "8px", md: "16px", lg: "24px", xl: "48px" };
+export const radius  = { sm: "4px", md: "8px",  lg: "12px" };
+```
+
+Theme in [theme.ts](app/components/styles/theme.ts):
+
+```ts
+export const theme = {
+  colors,
+  spacing,
+  radius,
+  typography: {
+    fontFamily:  "Inter, sans-serif",
+    monoFamily:  "JetBrains Mono, monospace",  // financial metrics and numeric values
+    headingWeight: 600,
+  },
+};
+```
+
+**Typography:**
+
+| Token | Value | Usage |
+|---|---|---|
+| `--font-display` | `Inter, sans-serif` | Headings H1–H3 |
+| `--font-body` | `Inter, sans-serif` | Body text, labels, tables |
+| `--font-mono` | `JetBrains Mono, monospace` | Financial metrics, percentages, amounts |
+| Base size | `16px` | Root `rem` reference |
+
+**Logos:** SVG-only. Two variants in [app/assets/logo/](app/assets/logo/): `logo-dark.svg` (white text, for dark navbar) and `logo-light.svg` (navy text, for light surfaces). Minimum rendering width: `120px`. No rasterized PNG logos.
+
+**Iconography:** Lucide React (`lucide-react@0.383.0`) — named imports only for tree-shaking. No icon fonts.
+
+**Spacing:** 4-point Tailwind scale (`4px` base). Standard padding: `p-4` (16px) for cards, `p-2` (8px) for inputs, `gap-6` (24px) for grid layouts. Horizontal page padding: `px-6 md:px-12 lg:px-24`.
+
+**Branding and visual labeling:**
+- Trust certification status is always communicated through both color and a text label — never color alone (accessibility).
+- Certified badges use `--qw-gold` with a checkmark icon.
+- Pending uses `--qw-warning` with a clock icon.
+- Rejected uses `--qw-error` with an X icon.
+
+**Styling rules:**
+
+Correct:
+```tsx
+<Button className="bg-[var(--color-primary)] text-[var(--color-primary-foreground)]" />
+```
+Incorrect:
+```tsx
+<Button style={{ background: "#0D1F3C" }} />
+```
+
 ### 1.3.8 Responsive Design
+Breakpoints in [breakpoints.ts](app/components/styles/breakpoints.ts):
+
+```ts
+export const breakpoints = { mobile: 480, tablet: 768, desktop: 1200 };
+```
+
+| Device | Marketplace Layout | Investment Detail | Navigation |
+|---|---|---|---|
+| Mobile | Single column, stacked SME cards | Single column | Hamburger menu |
+| Tablet | 2-column card grid | Side-by-side metrics + charts | Collapsed sidebar |
+| Desktop | 3-column card grid | Full dual-panel | Full sidebar |
+
+Developers must use `flex`/`grid` layouts, avoid fixed widths, and use TailwindCSS responsive utilities (`sm:`, `md:`, `lg:`).
+
+
 ### 1.3.9 Internationalization
+All text is externalized. Components must never contain literal strings.
+
+Incorrect:
+```tsx
+<h1>Marketplace</h1>
+```
+Correct:
+```tsx
+const { t } = useTranslation();
+<h1>{t("marketplace.title")}</h1>
+```
+
+Translation files: [en.json](app/components/i18n/en.json) · [es.json](app/components/i18n/es.json)
+
 ### 1.3.10 Performance Guidelines
+Developers must:
+- Use `React.memo` for heavy display components.
+- Use `lazy()` for feature page modules.
+- Avoid unnecessary re-renders with `useMemo` and `useCallback`.
+
+```tsx
+// Lazy loading feature pages
+const MarketplacePage     = lazy(() => import("@/components/pages/MarketplacePage"));
+const InvestmentDetailPage = lazy(() => import("@/components/pages/InvestmentDetailPage"));
+
+export function AppRoutes() {
+  return (
+    <Suspense fallback={<Spinner />}>
+      <MarketplacePage />
+    </Suspense>
+  );
+}
+```
+
+```tsx
+// Memoization of heavy display components
+export const SMECard = memo(function SMECard({ sme }: SMECardProps) {
+  const formattedGrowth = useMemo(() => formatPercent(sme.growthRate), [sme.growthRate]);
+  return <article>...</article>;
+});
+```
+
+---
 
 ## 1.4 Security 
 ### 1.4.1 Technologies
