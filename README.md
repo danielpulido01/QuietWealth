@@ -794,119 +794,39 @@ Infrastructure
 ## 1.6 Design Patterns
 
 ### Singleton
-One shared instance app-wide.
+ **Problem:** Logger, AuthFacade, PollingOrchestrator must have a single instance app-wide.
 
-| Class | File |
-|---|---|
-| `Logger` | [app/utils/logger.ts](app/utils/logger.ts) |
-| `ExceptionHandler` | [app/utils/error-handler.ts](app/utils/error-handler.ts) |
-| `AuthFacade` | [app/auth/AuthFacade.ts](app/auth/AuthFacade.ts) |
-| `SessionManager` | [app/state/sessionManager.ts](app/state/sessionManager.ts) |
-| `CertificationPollingStore` | [app/state/certificationPollingStore.ts](app/state/certificationPollingStore.ts) |
-| `DefaultHttpClientFacade` | [app/services/client.ts](app/services/client.ts) |
-| `DefaultApplicationServiceFacade` | [app/services/applicationFacade.ts](app/services/applicationFacade.ts) |
+**Solution:** Class with private constructor and static getInstance().
 
-```ts
-export class MyService {
-  private static instance: MyService | null = null;
-  static getInstance(): MyService {
-    if (!MyService.instance) MyService.instance = new MyService();
-    return MyService.instance;
-  }
-  private constructor() {}
-}
-export const myService = MyService.getInstance();
-```
+**Implementation:** See app/utils/logger.ts, app/auth/AuthFacade.ts.
 
-### Observer — Certification Status Tracking
-Used for the long-running document certification process.
+### Observer (for polling)
+**Problem:** Certification state changes asynchronously and multiple components (progress bar, notifications) must react.
 
-Reference files: [certification.types.ts](app/state/certification.types.ts) · [certificationPollingStore.ts](app/state/certificationPollingStore.ts) · [certificationPollingManager.ts](app/state/certificationPollingManager.ts) · [useCertificationProgress.ts](app/components/hooks/useCertificationProgress.ts)
+**Solution:** CertificationPollingStore maintains a list of listeners and notifies changes.
 
-```ts
-// Observable store
-class CertificationPollingStore {
-  private listeners = new Set<Listener<CertificationState>>();
-  private state: CertificationState = createInitialState();
+**Implementation:** app/state/certificationPollingStore.ts + useCertificationProgress.
 
-  getState()  { return this.state; }
-  subscribe(listener: Listener<CertificationState>) {
-    this.listeners.add(listener);
-    listener(this.state);            // emit immediately on subscribe
-    return () => this.listeners.delete(listener);
-  }
-  patchState(partial: Partial<CertificationState>) {
-    this.state = { ...this.state, ...partial };
-    for (const l of this.listeners) l(this.state);
-  }
-}
+### Facade (Auth and services)
+**Problem:** Hooks must not know details of Auth0 or Axios.
 
-// Subscriber hook
-function useCertificationProgress() {
-  const [state, setState] = useState(() => certificationPollingManager.getSnapshot());
-  useEffect(() => certificationPollingManager.subscribe(setState), []);
-  return state;
-}
+**Solution:** AuthFacade and ApplicationServiceFacade expose simple methods.
 
-// Manager — non-blocking kickoff
-async function startPolling(applicationId: string) {
-  store.patchState({ runState: "polling", applicationId });
-  void runPollingLoop(applicationId);
-}
-```
+**Implementation:** app/services/applicationFacade.ts injects HttpClient and AuthFacade.
 
-### Facade — Auth + Application Services
-[AuthFacade.ts](app/auth/AuthFacade.ts) · [applicationFacade.ts](app/services/applicationFacade.ts)
+### Proxy (HTTP interceptor)
+**Problem:** Add Bearer token to every request and handle 401 centrally.
 
-```ts
-export interface AuthServiceFacade {
-  login(): Promise<void>;
-  logout(): Promise<void>;
-  getAccessToken(): Promise<string>;
-  getCurrentSession(): Promise<UserSessionDTO | null>;
-}
+**Solution:** Axios interceptor (proxy) that adds header and refreshes token on expiry.
 
-export interface ApplicationServiceFacade {
-  readonly auth: AuthServiceFacade;
-  readonly http: HttpClientFacade;
-}
-```
+**Implementation:** app/services/httpInterceptors.ts.
 
-Hooks import only `useApplicationServices()`. New domains are added by extending facades — never by importing low-level clients directly in hooks.
+### Adapter (Microsoft claims)
+**Problem:** Auth0 returns Microsoft Entra ID claims with different names than our internal DTO.
 
-### Adapter
-[MicrosoftProfileAdapter.ts](app/auth/adapters/MicrosoftProfileAdapter.ts)
+**Solution:** MicrosoftProfileAdapter transforms the object.
 
-Normalizes Microsoft Entra ID claims (forwarded by Auth0) into `UserSessionDTO`. The rest of the application never sees provider-specific claim shapes.
-
-### Proxy — Auth Middleware
-[AuthMiddleware.ts](app/auth/AuthMiddleware.ts)
-
-Intercepts every protected API call to validate JWT expiry and trigger silent refresh or logout before the request is dispatched.
-
-### Strategy — Polling Interval
-[app/polling/strategies/](app/polling/strategies/)
-
-```ts
-export interface IPollingStrategy {
-  getInterval(attempt: number): number;  // ms
-}
-
-export class FixedIntervalStrategy implements IPollingStrategy {
-  getInterval(_: number) { return 10_000; }  // 10 s
-}
-
-export class ExponentialBackoffStrategy implements IPollingStrategy {
-  getInterval(attempt: number) { return Math.min(2 ** attempt * 1000, 60_000); }
-}
-```
-
-`PollingOrchestrator` switches to `ExponentialBackoffStrategy` on network errors. After 5 failed attempts it stops and dispatches a connectivity error to the UI.
-
-### Queue-Based Logging
-[AuthAuditQueue.ts](app/auth/AuthAuditQueue.ts)
-
-Auth events are enqueued and dispatched asynchronously to Application Insights, preventing auth flow delays from synchronous logging I/O.
+**Implementation:** app/auth/adapters/MicrosoftProfileAdapter.ts.
 
 ---
 
