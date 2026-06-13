@@ -1426,6 +1426,7 @@ Errors: `401 Unauthorized` for invalid or expired tokens, `403 Forbidden` for mi
 ---
 
 ### SME document intake
+>> Esto debería ser async con una cola o algo
 1. The SME sends files to [`DocumentIntakeController`](/server/QuietWealth.Backend/domains/document-intake/controllers/DocumentIntakeController.cs).
 2. The backend checks `files.upload` permission and validates [`UploadFilesRequest`](/server/QuietWealth.Backend/domains/document-intake/models/UploadFilesRequest.cs).
 3. Files are validated by format and size.

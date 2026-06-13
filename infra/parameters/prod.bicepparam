@@ -5,9 +5,9 @@ param environment = 'prod'
 param resourceGroupLocation = 'eastus'
 param servicesLocation      = 'westcentralus'
 
-param resourceGroupName    = 'DesarrolloProfesional'
-param frontendAppName      = 'proddesarrolloprofesional-frontend'  // update if using a custom name
-param apiAppName           = 'proddesarrolloprofesional-api'       // update if using a custom name
+param resourceGroupName    = 'QuietWealth'
+param frontendAppName      = 'prodquietwealth-frontend'  // update if using a custom name
+param apiAppName           = 'prodquietwealth-api'       // update if using a custom name
 param appServicePlanSku    = 'B1'
 
 // ── Secrets — read from environment variables at deploy time ──────────────────

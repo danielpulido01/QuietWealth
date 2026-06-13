@@ -1,4 +1,4 @@
-name: Build and deploy Staging Backend ASP.Net Core app to Azure Web App - qadesarrolloprofesional-api
+name: Build and deploy Staging Backend ASP.Net Core app to Azure Web App - qaquietwealth-api
 
 on:
   push:
@@ -30,7 +30,7 @@ jobs:
         run: dotnet build --configuration Release
 
       - name: dotnet publish
-        run: dotnet publish DesarrolloProfesional.Api/DesarrolloProfesional.Api.csproj -c Release -o ${{env.DOTNET_ROOT}}/myapp
+        run: dotnet publish quietwealth.Api/quietwealth.Api.csproj -c Release -o ${{env.DOTNET_ROOT}}/myapp
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
@@ -63,6 +63,6 @@ jobs:
         id: deploy-to-webapp
         uses: azure/webapps-deploy@v3
         with:
-          app-name: 'qadesarrolloprofesional-api'
+          app-name: 'qaquietwealth-api'
           slot-name: 'Production'
           package: .

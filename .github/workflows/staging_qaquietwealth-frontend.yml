@@ -1,4 +1,4 @@
-name: Build and deploy Staging Frontend to Azure Web App - qadesarrolloprofesional-frontend
+name: Build and deploy Staging Frontend to Azure Web App - qaquietwealth-frontend
 
 on:
   push:
@@ -62,7 +62,7 @@ jobs:
         id: deploy-to-webapp
         uses: azure/webapps-deploy@v3
         with:
-          app-name: 'qadesarrolloprofesional-frontend'
+          app-name: 'qaquietwealth-frontend'
           slot-name: 'Production'
           package: .
           startup-command: 'npx --yes serve -s . -l $PORT'
