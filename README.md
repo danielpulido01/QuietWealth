@@ -1421,6 +1421,83 @@ With the most recent official SLA (April 8, 2026) for your stack:
 
 ## Scalability
 
+### Scaling model by component
+
+| Component | Scaling type | MVP baseline | Max target | Failure behavior |
+|---|---|---:|---:|---|
+| API App Service | Horizontal first, vertical if CPU stays high at max instances | 2 instances | 6 instances | APIM returns `429` after rate limit; API returns `503` if dependency pools are exhausted |
+| App Service Plan | Vertical scale for CPU/memory headroom | B1 | P1v3 | Deployment blocked if target SKU is unavailable |
+| Azure SQL Database | Vertical scale + query/index tuning | GP 2 vCores | GP 8 vCores | API returns `503`; writes are not silently dropped |
+| Azure Functions | Horizontal scale from Queue trigger | 1 instance | 10 instances | Message retries; after 5 failures goes to poison queue and document status becomes `Failed` |
+| Azure Managed Redis | Vertical tier scale | Standard C1 | Standard C3 | Fallback to direct Azure SQL reads for marketplace queries |
+
+### Auto-scaling rules
+
+| Target | Scale out trigger | Scale in trigger | Min | Max | Cooldown |
+|---|---|---|---:|---:|---|
+| API App Service | CPU > 70% for 10 min OR memory > 75% for 10 min OR API P95 latency > 800 ms for 10 min | CPU < 40% AND memory < 55% AND P95 latency < 400 ms for 30 min | 2 | 6 | 10 min |
+| Document Azure Functions | Queue depth > 100 messages OR oldest message age > 60 s | Queue depth < 20 messages AND oldest message age < 15 s for 15 min | 1 | 10 | 5 min |
+
+If the API reaches 6 instances and P95 stays above 1.5 s for 15 min, scale the App Service Plan from B1 to P1v3. <<Validate P1v3 budget with professor>>
+
+### Stateless API
+
+- API instances store no local session state.
+- Auth state lives in Auth0 JWTs and backend session metadata lives in Azure SQL.
+- Marketplace cache lives in Azure Managed Redis.
+- No sticky sessions are required; any API instance can serve any authenticated request.
+- If an API instance dies, the next request is routed to another instance and revalidates the JWT.
+
+### Azure SQL connection pooling
+
+| Pool | Max pool size | Timeout | Use |
+|---|---:|---:|---|
+| API read/write pool | 80 connections per API instance | 30 s command timeout | Marketplace, certification, document metadata |
+| Audit/outbox pool | 20 connections per API instance | 15 s command timeout | AuditEntry and OutboxMessage writes |
+| Function processing pool | 40 connections per Function instance | 30 s command timeout | Document processing status updates |
+
+- If a pool is exhausted for more than 5 s, return `503 Service Unavailable`.
+- Bulkhead isolation: audit/outbox saturation must not consume the API read/write pool.
+- SQL writes use idempotency keys for document-processing updates.
+
+### Redis scaling and fallback
+
+| Rule | Action |
+|---|---|
+| Redis memory > 70% for 15 min | Scale from Standard C1 to Standard C2 |
+| Redis memory > 70% on C2 for 15 min OR cache CPU > 75% for 15 min | Scale to Standard C3 |
+| Redis unavailable for 3 consecutive requests | Bypass cache for 5 min and read marketplace data directly from Azure SQL |
+| Redis recovers | Re-enable cache and warm top 50 marketplace queries |
+
+Marketplace cache TTL: 5 min. Invalidate keys when certification status or marketplace metrics change.
+
+### Async document pipeline scaling
+
+| Stage | Scaling rule | Failure behavior |
+|---|---|---|
+| React direct upload to Blob | SAS expires after 15 min; max file size 100 MB/request | Expired SAS requires a new upload permission request |
+| Event Grid | One Blob-created event per uploaded file | Failed delivery retries for 24 h, then logs operational incident |
+| Azure Queue Storage | Queue absorbs upload bursts; alert at > 1,000 pending messages | Upload remains `Pending`; UI shows delayed processing |
+| Azure Function Queue Trigger | Batch size 16, max 10 instances, max 160 concurrent messages | Retry 5 times; poison message sets document status to `Failed` |
+| Azure SQL status update | Status transition: `Pending -> Processing -> Completed/Failed` | Duplicate events are ignored by idempotency key |
+
+### Scalability bottlenecks
+
+| Bottleneck | Limit signal | Mitigation |
+|---|---|---|
+| Azure SQL shared write load | DTU/vCore CPU > 80% for 15 min OR deadlocks > 5/min | Add indexes, reduce query fan-out, scale to GP 8 vCores |
+| APIM per-client rate limit | Client hits 60 req/min or 10 concurrent connections | Return `429` with `Retry-After: 30`; frontend backs off |
+| Redis hot keys | One key > 20% of cache operations for 10 min | Add key partition by filter/page and warm common pages |
+| Queue backlog | > 1,000 pending messages or oldest message > 5 min | Keep max 10 instances, show `Processing delayed`, and prioritize oldest messages first |
+| Notification Hubs throughput | Notification failures > 2% for 10 min | Queue notification retries through outbox; UI polling remains source of truth |
+
+### 10x-100x traffic changes
+
+| Growth | Required changes |
+|---|---|
+| 10x | API max instances 12, Function max instances 30, Redis Standard C3, Azure SQL GP 8 vCores |
+| 100x | Split marketplace read model from transactional SQL, partition document queues by tenant, use Azure Functions Premium plan, add Redis clustering, move APIM to Premium multi-region |
+
 ## Backend key workflows
 
 ### User authentication and session validation
