@@ -1257,7 +1257,7 @@ classDiagram
 - Database: Azure SQL Database
 - File storage: Azure Blob Storage
 - Blob archival: Azure Blob Lifecycle Management for Cool, Cold, and Archive tier transitions
-- SQL archival orchestration: Azure Data Factory or scheduled .NET/Azure Function export process
+- SQL archival orchestration: Scheduled Azure Function export process
 - Cache: Azure Managed Redis
 - Asynchronous document processing: Azure Blob Storage events via Azure Event Grid, Azure Queue Storage, and Azure Function Queue Trigger
 - Notifications: Azure Notification Hubs
@@ -1489,7 +1489,7 @@ Marketplace cache TTL: 5 min. Invalidate keys when certification status or marke
 | APIM per-client rate limit | Client hits 60 req/min or 10 concurrent connections | Return `429` with `Retry-After: 30`; frontend backs off |
 | Redis hot keys | One key > 20% of cache operations for 10 min | Add key partition by filter/page and warm common pages |
 | Queue backlog | > 1,000 pending messages or oldest message > 5 min | Keep max 10 instances, show `Processing delayed`, and prioritize oldest messages first |
-| Notification Hubs throughput | Notification failures > 2% for 10 min | Queue notification retries through outbox; UI polling remains source of truth |
+| Notification Hubs throughput | Notification failures > 2% for 10 min | Queue notification retries through outbox; API polling against Azure SQL-backed status remains fallback |
 
 ### 10x-100x traffic changes
 
@@ -1518,9 +1518,11 @@ Errors: `401 Unauthorized` for invalid or expired tokens, `403 Forbidden` for mi
 2. The .NET backend validates the user, checks `files.upload`, creates `DocumentBatch` / `SourceDocument` metadata, and generates a short-lived SAS upload URL.
 3. React uploads the file directly to the Azure Blob Storage container using the SAS URL.
 4. Azure Blob Storage emits a file-created event after the blob is written.
-5. Azure Event Grid, Blob Trigger, or Queue routes the event to an Azure Function.
-6. The Azure Function processes the file, validates checksum/metadata, and updates Azure SQL with status: `Pending`, `Processing`, `Completed`, or `Failed`.
-7. React polls `GET /api/trust-record-applications/{id}/status` or receives a notification through Azure Notification Hubs about the upload/certification status change. Azure Notification Hubs is used only to notify users about upload or certification status changes; Azure Blob events and Azure Function handle document processing.
+5. Azure Event Grid routes the Blob-created event to Azure Queue Storage.
+6. An Azure Function Queue Trigger reads the queue message, processes the file, validates checksum/metadata, and updates `SourceDocument.validation_status` in Azure SQL: `Pending`, `Processing`, `Completed`, or `Failed`.
+7. The function updates `DocumentBatch.status` in Azure SQL based on the batch result: `Pending`, `Processing`, `Completed`, or `Failed`.
+8. OutboxMessage records are created for audit, notification, and observability side effects.
+9. React polls `GET /api/trust-record-applications/{id}/status` or receives a user-facing notification through Azure Notification Hubs. Azure Notification Hubs is not part of document processing.
 
 Errors: `400 Bad Request` for invalid files, `413 Payload Too Large` for oversized uploads, `503 Service Unavailable` for storage failures.
 
@@ -1530,12 +1532,13 @@ Errors: `400 Bad Request` for invalid files, `413 Payload Too Large` for oversiz
 1. The expert requests pending SME submissions.
 2. The backend validates expert permissions.
 3. The backend loads pending `DocumentBatch` and `SourceDocument` metadata.
-4. The expert submits a decision: `approved`, `rejected`, or `needs_changes`.
+4. The expert submits a decision: `Approved`, `Rejected`, or `NeedsChanges`.
 5. The backend validates that the batch is still reviewable.
 6. The certification service stores reviewer id, timestamp, notes, decision, and trust level.
-7. Approved SMEs become visible in the marketplace.
-8. Rejected or incomplete submissions remain hidden and trigger a notification.
-9. The backend emits a certification decision audit event.
+7. `DocumentBatch.status` becomes `Approved`, `Rejected`, or `NeedsChanges` based on the expert decision.
+8. Approved SMEs become visible in the marketplace.
+9. Rejected or incomplete submissions remain hidden and trigger a notification.
+10. The backend emits a certification decision audit event.
 
 Errors: `403 Forbidden` for non-experts, `409 Conflict` for finalized batches, `400 Bad Request` for invalid decisions.
 
@@ -1544,12 +1547,13 @@ Errors: `403 Forbidden` for non-experts, `409 Conflict` for finalized batches, `
 ### Investment marketplace browsing
 1. The investor requests the marketplace list.
 2. The backend validates session and marketplace read permission.
-3. The backend checks Azure Managed Redis using filter, search, page, and sort parameters as the cache key.
+3. `MarketplaceReadService` checks Azure Managed Redis using filter, search, page, and sort parameters as the cache key.
 4. On cache hit, the backend returns cached paginated card data.
-5. On cache miss, the backend queries only SMEs with active certification and applies optional filters: sector, trust level, growth, capital raised, and search text.
-6. The backend stores the result in cache with a short TTL and invalidates it when certification status or marketplace metrics change.
-7. The backend returns paginated card data: company, sector, badge, growth, raised capital, investors, and trust level.
-8. Financial documents are never returned in list responses.
+5. On cache miss, the backend queries Azure SQL, which remains the source of truth, and returns only SMEs with active certification.
+6. Optional filters are applied: sector, trust level, growth, capital raised, and search text.
+7. The backend stores the result in Redis with a short TTL and invalidates it when certification status, marketplace listing data, or investment metric data changes.
+8. The backend returns paginated card data: company, sector, badge, growth, raised capital, investors, and trust level.
+9. Financial documents are never returned in list responses.
 
 Errors: `400 Bad Request` for invalid filters, `200 OK` with empty list for no results, `503 Service Unavailable` for read model failures.
 
@@ -1585,7 +1589,7 @@ Errors: audit persistence failures fail the current transaction; telemetry publi
 1. Blob artifacts already stored in Azure Blob Storage are governed by Azure Blob Lifecycle Management.
 2. Blob lifecycle rules move eligible files automatically from Hot to Cool, Cold, or Archive tier based on retention age and policy.
 3. Old structured records in Azure SQL are identified using [`RetentionPolicyOptions`](/server/QuietWealth.Backend/shared/Configuration/RetentionPolicyOptions.cs).
-4. Azure Data Factory or a scheduled .NET/Azure Function export process moves eligible SQL data to archive files in Azure Blob Storage.
+4. A scheduled Azure Function export process moves eligible SQL data to archive files in Azure Blob Storage.
 5. After SQL data is exported, Blob Lifecycle Management moves those archived files to the Archive tier.
 6. Archive metadata stores status, location, timestamp, retention category, and legal-hold state.
 7. Links between SMEs, documents, certifications, and audit entries are preserved.
