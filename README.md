@@ -786,21 +786,8 @@ The frontend uses a five-layer architecture with clear responsibilities and down
 - Services can only use Infrastructure.
 - **No layer may call upward.**
 
-```mermaid
-flowchart TD
-  P["Presentation<br/>pages + components"]
-  A["Application<br/>feature hooks"]
-  D["Domain<br/>models + Zod + policies"]
-  S["Services<br/>HTTP facade + AuthFacade + API services"]
-  I["Infrastructure<br/>Redux + Logger + Settings + i18n"]
+<img width="1408" height="768" alt="Gemini_Generated_Image_cm3n28cm3n28cm3n" src="https://github.com/user-attachments/assets/2df99b1f-4c0f-4090-b4d4-e6dd446e3700" />
 
-  P --> A
-  A --> D
-  A --> S
-  A --> I
-  S --> D
-  S --> I
-```
 
 **Example: Login flow**
 
