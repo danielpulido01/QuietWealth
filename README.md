@@ -2260,9 +2260,95 @@ public sealed class CertificationValidationToMarketplaceAcl : ICertificationVali
 
 The ACL keeps domain services from calling other domains directly, improving maintainability by localizing translation and integration rules. External provider adapters also act as ACL boundaries when they translate Auth0, Blob Storage, Redis, Queue Storage, Notification Hubs, and Application Insights contracts into QuietWealth contracts.
 
+## Domain-Driven Design (DDD) domain definition
 
+### Domain classification
+| Domain | Classification | Why |
+|---|---|---|
+| Certification Validation and Trust Assessment | Core Domain | This is the differentiator of QuietWealth: convert uploaded SME evidence into a certified trust record investors can rely on. |
+| Document Intake | Supporting Domain | Handles upload permission, file registration, blob linkage, checksum/validation status, and intake lifecycle. |
+| SME Profile Management | Supporting Domain | Owns the canonical SME/company identity used by document, certification, and marketplace flows. |
+| Marketplace Read Model | Supporting Domain | Exposes certified SMEs to investors through browse/detail views, filters, and cached read models. |
+| Retention and Archival | Supporting Domain | Applies lifecycle, archive, legal-hold, and traceability rules to records and artifacts. |
+| Identity and Access | Generic Domain | Standard authentication, authorization, session, and permission enforcement. |
+| Audit and Observability | Generic Domain | Cross-cutting audit trail, domain event persistence, correlation, and telemetry publishing. |
 
+### Bounded contexts
+| Bounded Context | Main Responsibilities | Aggregate Root(s) | Primary Data Store |
+|---|---|---|---|
+| `IdentityAccess` | JWT/session validation, policy checks, session refresh, logout | `UserSession`, `AccessPolicy` | Azure SQL |
+| `SMEProfile` | SME/company identity, ownership, profile completeness, business metadata | `SMEProfile` | Azure SQL |
+| `DocumentIntake` | Upload authorization, batch registration, source-document metadata, processing status | `DocumentBatch`, `SourceDocument` | Azure SQL + Blob |
+| `CertificationValidation` | Review queue, expert decision, trust-level assignment, application status | `TrustRecordApplication`, `CertificationReview` | Azure SQL |
+| `Marketplace` | Investor browse/detail read models, visibility rules, filtering, cache invalidation | `MarketplaceListing`, `InvestmentMetric` | Azure SQL + Redis |
+| `RetentionArchival` | Retention policy evaluation, archive export, legal hold, archive metadata | `RetentionRecord` | Azure SQL + Blob Archive tier |
+| `AuditObservability` | Audit entries, outbox-backed event capture, telemetry publication | `AuditEntry` | Azure SQL + Application Insights |
 
+### Aggregate invariants
+| Context | Invariant |
+|---|---|
+| `IdentityAccess` | A `UserSession` cannot be active beyond token/session expiry. |
+| `DocumentIntake` | A `SourceDocument` cannot be `Completed` without blob reference, checksum, and validation result. |
+| `DocumentIntake` | A `DocumentBatch` cannot be intake-`Completed` while any required `SourceDocument` is still `Pending` or `Processing`. |
+| `CertificationValidation` | A `TrustRecordApplication` can be reviewed only when its intake is complete and still reviewable. |
+| `CertificationValidation` | A finalized certification decision is immutable unless an explicit reopen workflow exists. |
+| `Marketplace` | Only SMEs with active approved certification can be visible in `MarketplaceListing`. |
+| `Marketplace` | Financial documents are never exposed through marketplace list responses. |
+| `RetentionArchival` | Records under legal hold cannot be archived or deleted. |
+| `RetentionArchival` | Archive operations must be idempotent and preserve linkage to SME, documents, certification, and audit history. |
+
+### Domain events and consumers
+| Event | Produced by | Consumed by |
+|---|---|---|
+| `UserLoggedOut` | `IdentityAccess` | `AuditObservability` |
+| `FilesUploadStarted` / `FilesUploadCompleted` / `FilesUploadRejected` | `DocumentIntake` | `CertificationValidation`, `AuditObservability` |
+| `SourceDocumentValidationCompleted` / `SourceDocumentValidationFailed` | `DocumentIntake` | `CertificationValidation`, `AuditObservability` |
+| `CertificationApproved` / `CertificationRejected` / `CertificationNeedsChanges` | `CertificationValidation` | `Marketplace`, `AuditObservability` |
+| `MarketplaceListingPublished` / `MarketplaceListingUnpublished` | `Marketplace` | `AuditObservability` |
+| `RecordsArchived` | `RetentionArchival` | `AuditObservability` |
+
+### Context map
+| Upstream Context | Downstream Context | Integration Pattern |
+|---|---|---|
+| `IdentityAccess` | All contexts | JWT claims and permission policy enforcement |
+| `SMEProfile` | `DocumentIntake` | ACL-mediated SME ownership/profile contract |
+| `SMEProfile` | `CertificationValidation` | ACL-mediated company identity contract |
+| `DocumentIntake` | `CertificationValidation` | ACL-mediated submission contract + published events |
+| `CertificationValidation` | `Marketplace` | ACL-mediated publication/visibility contract + events |
+| All operational contexts | `AuditObservability` | Outbox/event publisher with correlation ID propagation |
+| `DocumentIntake`, `CertificationValidation`, `Marketplace` | `RetentionArchival` | Scheduled export/archive contracts |
+
+### Ubiquitous language
+| Term | Definition |
+|---|---|
+| `SMEProfile` | Canonical business identity of an SME on the platform. |
+| `DocumentBatch` | Set of uploaded financial documents submitted together by an SME. |
+| `SourceDocument` | Individual uploaded file with blob linkage and validation metadata. |
+| `TrustRecordApplication` | Certification case created from an SME submission and tracked through review. |
+| `CertificationReview` | Expert decision record with reviewer, notes, timestamp, and trust level. |
+| `TrustLevel` | Business rating assigned after expert validation. |
+| `MarketplaceListing` | Investor-facing certified SME card used for search, filter, and browse. |
+| `InvestmentMetric` | Financial and marketplace KPIs shown in detail views and charts. |
+| `RetentionRecord` | Lifecycle metadata controlling retention, archive, and legal-hold status. |
+
+### Mapping to backend folders
+| Folder | DDD role |
+|---|---|
+| `server/QuietWealth.Backend/domains/<domain-name>/models` | Aggregates, entities, value objects, domain events, invariants |
+| `server/QuietWealth.Backend/domains/<domain-name>/services` | Domain behaviors and use-case orchestration inside the boundary |
+| `server/QuietWealth.Backend/domains/<domain-name>/repositories` | Persistence contracts and implementations owned by the domain |
+| `server/QuietWealth.Backend/domains/<domain-name>/controllers` | HTTP endpoints for the domain module |
+| `server/QuietWealth.Backend/acls/<source>-to-<target>` | Anti-Corruption Layer for all cross-domain translations and calls |
+| `server/QuietWealth.Backend/shared` | Shared kernel primitives and infrastructure abstractions |
+
+### Proposed domain folders
+- `identity-access`
+- `sme-profile`
+- `document-intake`
+- `certification-validation`
+- `marketplace`
+- `retention-archival`
+- `audit-observability`
 
 
 
@@ -2705,3 +2791,4 @@ https://datatracker.ietf.org/doc/html/rfc6749
 
 - Microsoft Entra ID Documentation  
 https://learn.microsoft.com/en-us/entra/
+
