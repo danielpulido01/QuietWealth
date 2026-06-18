@@ -1444,7 +1444,7 @@ Artifact is passed between jobs via `actions/upload-artifact` / `actions/downloa
 - Azure Event Grid
 - Azure Queue Storage
 - Azure Functions
-- Azure Data Factory
+- Scheduled Azure Function
 - Azure Notification Hubs
 - Observability resources (Application Insights / Azure Monitor where applicable)
 
@@ -1515,11 +1515,10 @@ az deployment sub create `
 ```
 
 ### Environments and deployment model
-- Environments: `dev`, `stage`, `prod` (isolated by resource group and/or subscription).
+- GitHub Environments: `QA` and `Production` (isolated by resource group and deployment configuration).
 - Deployment pattern:
-- `dev`: automatic deployment on merge to `develop`.
-- `stage`: automatic deployment from `main` after CI success.
-- `prod`: manual approval + protected environment gate.
+- `QA`: automatic deployment from `staging` after CI success.
+- `Production`: automatic deployment from `main` after CI success, with protected environment approval.
 - Application deployment target: **Azure App Service** (no Kubernetes required for current scope).
 - Production release strategy: deployment slots (`staging` -> `production`) with slot swap and rollback.
 
@@ -1528,12 +1527,12 @@ az deployment sub create `
 - `ci-backend`: restore, build, test backend (.NET), run static analysis/format checks.
 - `security-scan`: dependency/license checks and secret scanning.
 - `infra-plan`: `bicep build` + `az deployment what-if` per environment.
-- `deploy-dev` / `deploy-stage` / `deploy-prod`: apply infra changes (as approved) and deploy application artifacts.
+- `deploy-qa` / `deploy-prod`: apply infra changes (as approved) and deploy application artifacts.
 
 ### Governance and quality gates
 - Required PR checks before merge: frontend CI, backend CI, security scan.
 - Protected branches: `main` and release branches.
-- Environment approvals required for `prod`.
+- Environment approvals required for `Production`.
 - Artifact/version traceability required per deployment (commit SHA, build ID, release timestamp).
 
 ## Availability
@@ -1704,7 +1703,7 @@ Errors: `403 Forbidden` for non-experts, `409 Conflict` for finalized batches, `
 2. The backend validates session and marketplace read permission.
 3. `MarketplaceReadService` checks Azure Managed Redis using filter, search, page, and sort parameters as the cache key.
 4. On cache hit, the backend returns cached paginated card data.
-5. On cache miss, the backend queries Azure SQL, which remains the source of truth, and returns only SMEs with active certification.
+5. On cache miss, the backend queries Azure SQL, which remains the source of truth, and returns only SMEs with approved certification.
 6. Optional filters are applied: sector, trust level, growth, capital raised, and search text.
 7. The backend stores the result in Redis with a short TTL and invalidates it when certification status, marketplace listing data, or investment metric data changes.
 8. The backend returns paginated card data: company, sector, badge, growth, raised capital, investors, and trust level.
@@ -1832,6 +1831,10 @@ flowchart TD
         L7A["Layer entry"]
         ASQL["Azure SQL\nAdapter"]
         ABLS["Azure Blob\nStorage Adapter"]
+        AEVG["Event Grid\nRouting Boundary"]
+        AQUE["Azure Queue\nStorage Adapter"]
+        AFNW["Azure Function\nQueue Trigger Worker"]
+        ARED["Azure Redis\nCache Adapter"]
         ANHB["Notification Hub\nAdapter"]
         AENID["Auth0 / Entra ID\nAdapter"]
         AAIN["App Insights\nAdapter"]
@@ -1843,6 +1846,10 @@ flowchart TD
         L8A["Layer entry"]
         ESQL["Azure SQL\nDatabase"]
         EBLOB["Azure Blob\nStorage"]
+        EEVG["Azure Event\nGrid"]
+        EQUEUE["Azure Queue\nStorage"]
+        EFUNC["Azure\nFunctions"]
+        EREDIS["Azure Managed\nRedis"]
         ENHUB["Azure Notification\nHubs"]
         EAUTH["Auth0 +\nMicrosoft Entra ID"]
         EAINS["Azure Application\nInsights"]
@@ -2893,6 +2900,8 @@ Expected: commands request work, while domain events describe work that already 
 | `MarketplaceListing` | Investor-facing certified SME card used for search, filter, and browse. |
 | `InvestmentMetric` | Financial and marketplace KPIs shown in detail views and charts. |
 | `RetentionRecord` | Lifecycle metadata controlling retention, archive, and legal-hold status. |
+
+In the current MVP data model, `TrustRecordApplication` is represented by `DocumentBatch` plus `CertificationReview`.
 
 ### Mapping to backend folders
 | Folder | DDD role |
