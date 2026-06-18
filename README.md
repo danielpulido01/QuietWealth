@@ -1262,99 +1262,18 @@ flowchart TD
 ## Architecture diagrams in layers
 
 ### Level 1 — Context
-```mermaid
-C4Context
-title QuietWealth — System Context
 
-Person(smeOwner, "SME Owner", "Uploads financial documents and tracks certification status")
-Person(analyst, "Financial Analyst", "Reviews applications and issues certification decisions")
-Person(investor, "Investor", "Browses certified SMEs and views investment detail")
-Person(admin, "System Administrator", "Manages users, roles, configuration, and audit visibility")
+<img width="1408" height="768" alt="Gemini_Generated_Image_hge3muhge3muhge3" src="https://github.com/user-attachments/assets/ca6d3a3f-193f-4ea6-97b4-0e4ead34914e" />
 
-System(qw, "QuietWealth", "Financial trust record and certified SME investment marketplace")
-
-System_Ext(auth0, "Auth0", "Identity broker, OAuth 2.0 Authorization Code + PKCE")
-System_Ext(entra, "Microsoft Entra ID", "Corporate identity provider")
-System_Ext(appins, "Azure Application Insights", "Logs, metrics, traces, alerts")
-
-Rel(smeOwner, qw, "Uploads documents, tracks status", "HTTPS")
-Rel(analyst, qw, "Reviews and certifies applications", "HTTPS")
-Rel(investor, qw, "Browses marketplace and detail", "HTTPS")
-Rel(admin, qw, "Manages users and configuration", "HTTPS")
-
-Rel(qw, auth0, "Authenticates users through", "OIDC / OAuth 2.0 PKCE")
-Rel(auth0, entra, "Federates authentication to", "OIDC")
-Rel(qw, appins, "Sends telemetry to", "App Insights SDK")
-```
 
 ### Level 2 — Containers
-```mermaid
-C4Container
-title QuietWealth — Containers
 
-Person(user, "Platform User", "Investor, SME Owner, Financial Analyst, or Administrator")
+<img width="1408" height="768" alt="Gemini_Generated_Image_q18wk8q18wk8q18w" src="https://github.com/user-attachments/assets/228fb9b1-b5e4-41d7-96d9-0bd53fc44d37" />
 
-System_Boundary(qw, "QuietWealth") {
-  Container(frontend, "Frontend Web App", "Next.js 15, React 19, Node.js 22 on Azure App Service", "Server-rendered UI")
-  Container(api, "Backend API", ".NET on Azure App Service", "Business logic, certification workflow, authorization, persistence")
-  ContainerDb(db, "Application Database", "Azure SQL", "Users, SME profiles, certifications, investments")
-  Container(blob, "Document Storage", "Azure Blob Storage", "Uploaded financial documents")
-}
-
-System_Ext(auth0, "Auth0", "Identity broker")
-System_Ext(entra, "Microsoft Entra ID", "Corporate IdP")
-System_Ext(keyvault, "Azure Key Vault", "Secrets and configuration")
-System_Ext(appins, "Azure Application Insights", "Observability")
-System_Ext(actions, "GitHub Actions", "CI/CD")
-
-Rel(user, frontend, "Uses", "HTTPS")
-Rel(frontend, auth0, "Starts login/logout", "OIDC / OAuth 2.0 PKCE")
-Rel(auth0, entra, "Federates authentication", "OIDC")
-Rel(frontend, api, "Consumes protected REST endpoints", "HTTPS + Bearer JWT")
-Rel(frontend, appins, "Sends frontend telemetry", "App Insights SDK")
-Rel(api, db, "Reads and writes", "SQL/TLS")
-Rel(api, blob, "Stores and retrieves documents", "HTTPS SDK")
-Rel(api, keyvault, "Reads secrets", "Managed Identity")
-Rel(api, appins, "Sends backend telemetry", "App Insights SDK")
-Rel(actions, frontend, "Deploys build artifact", "OIDC")
-Rel(actions, api, "Deploys build artifact", "OIDC")
-```
 
 ### Level 3 — Frontend Components
-```mermaid
-C4Component
-title QuietWealth — Frontend Components
 
-Container_Boundary(frontend, "Frontend Web App — Next.js SSR") {
-  Component(pages, "Pages & Layouts", "Next.js App Router", "Route entry points and layout composition")
-  Component(ui, "UI Components", "React (Atomic Design)", "Atoms, molecules, organisms, templates")
-  Component(hooks, "Feature Hooks", "TypeScript", "Orchestrate use cases; connect UI to services and state")
-  Component(state, "Redux Store", "Redux Toolkit", "Shared state: auth, marketplace, certification, validation")
-  Component(services, "Application Services", "TypeScript + Axios", "API calls through one HTTP facade")
-  Component(domain, "Domain", "TypeScript + Zod", "DTOs, schemas, roles, permissions, access policies")
-  Component(auth, "Auth Layer", "Auth0 SDK", "AuthFacade, AuthMiddleware, guards, adapters")
-  Component(polling, "Polling Layer", "TypeScript", "Certification status polling and strategies")
-  Component(infra, "Infrastructure", "Logger, ErrorHandler, Settings, i18n", "Cross-cutting utilities and providers")
-}
-
-System_Ext(auth0, "Auth0", "OIDC provider")
-System_Ext(api, "Backend API", "Protected REST API")
-System_Ext(appins, "Application Insights", "Telemetry")
-
-Rel(pages, ui, "Compose")
-Rel(ui, hooks, "Call")
-Rel(hooks, state, "Read and dispatch")
-Rel(hooks, services, "Invoke")
-Rel(hooks, domain, "Validate and authorize with")
-Rel(services, domain, "Parse responses with Zod schemas")
-Rel(services, auth, "Get bearer token from")
-Rel(services, api, "Call", "HTTPS REST")
-Rel(auth, auth0, "Authenticate with")
-Rel(polling, services, "Fetch certification status through")
-Rel(services, infra, "Log and handle errors with")
-Rel(auth, infra, "Log auth events with")
-Rel(infra, appins, "Send telemetry to")
-```
+<img width="1408" height="768" alt="Gemini_Generated_Image_13lebv13lebv13le" src="https://github.com/user-attachments/assets/d7a35ff9-6f03-4e76-b08d-15c5ff861bf1" />
 
 ## Design Considerations
 
