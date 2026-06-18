@@ -1959,6 +1959,276 @@ Artifact is passed between jobs via `actions/upload-artifact` / `actions/downloa
 
 ### Backend Design Patterns
 
+#### 1. Repository Pattern
+
+| Aspect | Design |
+|---|---|
+| Purpose | Isolate domain services from Azure SQL persistence details while keeping Azure SQL Database as the source of truth. |
+| Azure pattern alignment | Internal application pattern; no direct Azure cloud pattern is forced. |
+| Where used | `domains/<domain>/repositories/` for aggregate retrieval and persistence. |
+| Main components | `IUserSessionRepository`, `IDocumentBatchRepository`, `IAuditEntryRepository`, `IRetentionRecordRepository`, `IMarketplaceListingRepository` |
+
+```csharp
+public interface IDocumentBatchRepository
+{
+    Task<DocumentBatch?> GetByIdAsync(Guid documentBatchId, CancellationToken cancellationToken);
+    Task SaveAsync(DocumentBatch batch, CancellationToken cancellationToken);
+}
+
+public sealed class DocumentIntakeService
+{
+    private readonly IDocumentBatchRepository batches;
+
+    public DocumentIntakeService(IDocumentBatchRepository batches) =>
+        this.batches = batches;
+}
+```
+
+Repositories keep SQL queries outside domain services, so services remain testable with repository doubles and do not depend on Azure SQL adapter code.
+
+#### 2. Adapter Pattern
+
+| Aspect | Design |
+|---|---|
+| Purpose | Isolate external SDKs and cloud integrations from domain code. |
+| Azure pattern alignment | Anti-Corruption Layer when adapters translate external contracts into QuietWealth domain contracts. |
+| Where used | `shared/infrastructure/adapters/` and domain infrastructure implementations. |
+| Main components | Azure SQL adapter, Azure Blob Storage adapter, Azure Notification Hubs adapter, Auth0 / Entra ID adapter, Application Insights adapter, Redis cache adapter, Queue Storage adapter |
+
+```csharp
+public interface IBlobStorageAdapter
+{
+    Task<UploadPermissionDto> CreateUploadPermissionAsync(
+        SourceDocument document,
+        TimeSpan expiresIn,
+        CancellationToken cancellationToken);
+}
+
+public sealed class AzureBlobStorageAdapter : IBlobStorageAdapter
+{
+    public Task<UploadPermissionDto> CreateUploadPermissionAsync(
+        SourceDocument document,
+        TimeSpan expiresIn,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(UploadPermissionDto.CreateFor(document.SourceDocumentId, expiresIn));
+}
+```
+
+Adapters keep Azure SDK calls behind backend-owned interfaces, so domain services stay stable when provider configuration or SDK details change. Azure Blob Storage stores files and artifacts; Azure SQL stores transactional metadata.
+
+#### 3. Facade Pattern
+
+| Aspect | Design |
+|---|---|
+| Purpose | Simplify complex integrations behind stable application-facing contracts. |
+| Azure pattern alignment | Federated Identity for Auth0 + Microsoft Entra ID; Valet Key for Blob SAS upload permissions; user-facing notification publishing through Notification Hubs. |
+| Where used | Auth0 + Microsoft Entra ID token validation, Blob upload permission / SAS URL generation, and user-facing Notification Hubs publishing. |
+| Main components | `IdentityAccessFacade`, `DocumentUploadFacade`, `NotificationFacade` |
+
+```csharp
+public interface IDocumentUploadFacade
+{
+    Task<UploadPermissionDto> RequestUploadPermissionAsync(
+        Guid batchId,
+        string fileName,
+        CancellationToken cancellationToken);
+}
+
+public interface IDocumentIntakeService
+{
+    Task<UploadPermissionDto> CreateUploadPermissionAsync(
+        Guid batchId,
+        string fileName,
+        CancellationToken cancellationToken);
+}
+
+public sealed class DocumentUploadFacade : IDocumentUploadFacade
+{
+    private readonly IDocumentIntakeService intake;
+
+    public DocumentUploadFacade(IDocumentIntakeService intake) => this.intake = intake;
+
+    public Task<UploadPermissionDto> RequestUploadPermissionAsync(
+        Guid batchId,
+        string fileName,
+        CancellationToken cancellationToken) =>
+        intake.CreateUploadPermissionAsync(batchId, fileName, cancellationToken);
+}
+```
+
+Facades reduce controller complexity and provide one stable entry point for federated token validation, Valet Key upload permissions, and Notification Hubs delivery. The backend validates Auth0 JWTs, never receives username/password credentials, and never stores client secrets inside JWT payloads.
+
+#### 4. DTO Pattern
+
+| Aspect | Design |
+|---|---|
+| Purpose | Separate HTTP contracts from domain models. |
+| Azure pattern alignment | Internal API contract pattern aligned with OpenAPI / Swagger; no separate Azure cloud pattern is assigned. |
+| Where used | Controllers, OpenAPI / Swagger contracts, request models, and response models. |
+| Main components | `CreateDocumentBatchRequestDto`, `UploadPermissionDto`, `MarketplaceListingResponseDto`, `CertificationDecisionRequestDto` |
+
+```csharp
+public sealed record CertificationDecisionRequestDto(
+    Guid DocumentBatchId,
+    string Decision,
+    decimal TrustLevel,
+    string Notes);
+
+public sealed record MarketplaceListingResponseDto(
+    Guid SmeProfileId,
+    string CompanyName,
+    string Sector,
+    decimal TrustLevel);
+```
+
+Dtos protect domain entities from HTTP shape changes and make OpenAPI contracts explicit for frontend and integration tests.
+
+#### 5. Outbox Pattern
+
+| Aspect | Design |
+|---|---|
+| Purpose | Publish side effects reliably after state changes are committed to Azure SQL. |
+| Azure pattern alignment | Publisher-Subscriber for event fan-out and Retry for transient publication failures. |
+| Where used | Document upload completion, certification decisions, marketplace publication changes, retention archival events, audit and notification side effects. |
+| Main components | `OutboxMessage`, `IOutboxRepository`, `OutboxPublisherWorker` |
+
+```csharp
+public sealed record OutboxMessage(
+    Guid OutboxMessageId,
+    string EventName,
+    string AggregateType,
+    Guid AggregateId,
+    string PayloadJson,
+    string Status);
+
+await outbox.SaveAsync(new OutboxMessage(
+    Guid.NewGuid(),
+    "CertificationApproved",
+    "DocumentBatch",
+    batch.DocumentBatchId,
+    payloadJson,
+    "Pending"), ct);
+```
+
+Azure SQL stores `OutboxMessage` in the same transaction as the business change. `OutboxPublisherWorker` publishes side effects after commit and retries transient failures without losing audit or notification work.
+
+#### 6. Domain Events
+
+| Aspect | Design |
+|---|---|
+| Purpose | Decouple domain modules from downstream side effects and cross-domain reactions. |
+| Azure pattern alignment | Publisher-Subscriber for asynchronous event consumers; Queue-Based Load Leveling for document processing events. |
+| Where used | Domain services emit events; Outbox and ACL handlers consume them after commit. |
+| Main components | `DocumentBatchCreated`, `SourceDocumentProcessed`, `CertificationApproved`, `CertificationRejected`, `MarketplaceListingPublished`, `RetentionRecordArchived` |
+
+```csharp
+public interface IDomainEvent
+{
+    Guid AggregateId { get; }
+    DateTimeOffset OccurredAtUtc { get; }
+}
+
+public sealed record SourceDocumentProcessed(
+    Guid AggregateId,
+    DateTimeOffset OccurredAtUtc,
+    string Status) : IDomainEvent;
+```
+
+Domain events keep modules independent: document intake, certification, marketplace, retention, and audit communicate through event contracts instead of direct service calls. Queue-Based Load Leveling is applied to document processing: Azure Event Grid detects and routes Blob-created events, Azure Queue Storage buffers processing work, and Azure Functions consume queued events. This smooths upload spikes and prevents the backend API from processing document bytes synchronously. Azure Notification Hubs delivers user-facing notifications only.
+
+#### 7. Strategy Pattern
+
+| Aspect | Design |
+|---|---|
+| Purpose | Encapsulate interchangeable business rules behind common interfaces. |
+| Azure pattern alignment | Internal application pattern for business rule variation; no separate Azure cloud pattern is assigned. |
+| Where used | Document validation by document category, retention policy calculation, certification scoring and trust-level assignment. |
+| Main components | `IDocumentValidationStrategy`, `IRetentionPolicyStrategy`, `ICertificationScoringStrategy` |
+
+```csharp
+public interface ICertificationScoringStrategy
+{
+    decimal CalculateTrustLevel(DocumentBatch batch, IReadOnlyList<SourceDocument> documents);
+}
+
+public sealed class RevenueBasedScoringStrategy : ICertificationScoringStrategy
+{
+    public decimal CalculateTrustLevel(DocumentBatch batch, IReadOnlyList<SourceDocument> documents) =>
+        85.00m;
+}
+```
+
+Strategies keep rule variation isolated, so validation, retention, and scoring logic can be unit-tested without changing orchestration services.
+
+#### 8. Middleware Pipeline Pattern
+
+| Aspect | Design |
+|---|---|
+| Purpose | Separate cross-cutting request responsibilities from controller and domain logic. |
+| Azure pattern alignment | Gateway Routing and Gateway Offloading through Azure API Management; Health Endpoint Monitoring for liveness/readiness checks. |
+| Where used | ASP.NET Core request pipeline before domain controllers execute. |
+| Main components | Authentication middleware, authorization policies, error handling middleware, correlation ID middleware, logging / telemetry middleware |
+
+```csharp
+var app = builder.Build();
+
+app.UseMiddleware<CorrelationIdMiddleware>();
+app.UseMiddleware<ErrorHandlingMiddleware>();
+app.UseAuthentication();
+app.UseAuthorization();
+app.UseMiddleware<RequestTelemetryMiddleware>();
+app.MapControllers();
+app.MapHealthChecks("/health/ready");
+```
+
+Azure API Management handles gateway-level responsibilities such as routing, rate limits, and shared request policies. ASP.NET Core middleware handles application-level cross-cutting concerns: authentication, authorization, error mapping, correlation IDs, telemetry, and health checks.
+
+#### 9. Read Model Pattern
+
+| Aspect | Design |
+|---|---|
+| Purpose | Optimize read-heavy marketplace and investment detail queries without overloading write aggregates. |
+| Azure pattern alignment | Materialized View / CQRS-lite for read-optimized data and Cache-Aside for Azure Managed Redis. |
+| Where used | Marketplace browsing, investment detail charts, and Redis-backed marketplace cache. |
+| Main components | `MarketplaceListing`, `InvestmentMetric`, `MarketplaceReadService`, `InvestmentDetailService`, Azure Managed Redis cache |
+
+```csharp
+public sealed class MarketplaceReadService
+{
+    private readonly IMarketplaceListingRepository listings;
+    private readonly IMarketplaceCacheAdapter cache;
+
+    public Task<IReadOnlyList<MarketplaceListingResponseDto>> SearchAsync(MarketplaceQueryDto query, CancellationToken ct) =>
+        cache.GetOrCreateAsync(query.CacheKey, () => listings.SearchAsync(query, ct), TimeSpan.FromMinutes(5), ct);
+}
+```
+
+`MarketplaceListing` and `InvestmentMetric` are read models stored in Azure SQL. Azure Managed Redis uses Cache-Aside for marketplace reads only; Azure SQL remains the source of truth.
+
+#### 10. Anti-Corruption Layer
+
+| Aspect | Design |
+|---|---|
+| Purpose | Prevent direct coupling between bounded contexts and preserve each domain language. |
+| Azure pattern alignment | Anti-Corruption Layer from Microsoft Azure Architecture Center. |
+| Where used | `acls/document-intake-to-certification-validation`, `acls/certification-validation-to-marketplace`, `acls/all-domains-to-audit-observability` |
+| Main components | `DocumentIntakeToCertificationValidationAcl`, `CertificationValidationToMarketplaceAcl`, `AuditObservabilityAcl` |
+
+```csharp
+public interface ICertificationValidationToMarketplaceAcl
+{
+    Task PublishApprovedSmeAsync(CertificationReview review, CancellationToken ct);
+}
+
+public sealed class CertificationValidationToMarketplaceAcl : ICertificationValidationToMarketplaceAcl
+{
+    public Task PublishApprovedSmeAsync(CertificationReview review, CancellationToken ct) =>
+        Task.CompletedTask;
+}
+```
+
+The ACL keeps domain services from calling other domains directly, improving maintainability by localizing translation and integration rules. External provider adapters also act as ACL boundaries when they translate Auth0, Blob Storage, Redis, Queue Storage, Notification Hubs, and Application Insights contracts into QuietWealth contracts.
+
 
 
 
