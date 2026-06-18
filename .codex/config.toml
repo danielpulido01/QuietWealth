@@ -1,0 +1,16 @@
+#:schema https://developers.openai.com/codex/config-schema.json
+
+model = "gpt-5.4"
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+model_reasoning_effort = "high"
+
+# Optional. Useful if you want Codex to be able to check current docs.
+web_search = "live"
+
+[agents]
+max_threads = 4
+max_depth = 1
+
+[windows]
+sandbox = "elevated"
