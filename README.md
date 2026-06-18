@@ -1732,6 +1732,60 @@ flowchart TD
 
 ## Design Considerations
 
+### 1) Configuration, parameters, and policy as code
+- Runtime configuration is versioned in source control through typed options, `.env.example`, Bicep parameter templates, and documented environment variables.
+- Secrets are injected through secure providers and environment variables; credentials, connection strings, client secrets, and tokens are never hardcoded, and SAS permissions are generated at runtime with short expiration windows.
+- The configuration catalog covers Auth0 + Microsoft Entra ID, Azure SQL Database, Azure Blob Storage, Azure Managed Redis, Azure Event Grid, Azure Queue Storage, Azure Notification Hubs, and Azure Application Insights.
+- Azure API Management policies define rate limits, quotas, payload limits, and CORS rules for the frontend App Service origins.
+- Authorization policy is maintained as an explicit mapping from roles to permissions to protected endpoints.
+- Retention and archival policy is implemented through `RetentionRecord`, Azure Blob Lifecycle Management, and a Scheduled Azure Function for SQL archival.
+- Outbox publishing policy defines event status values, retry limits, dead-letter behavior, and maximum processing age.
+- Every policy change includes the code/configuration change, migration notes, and rollback plan.
+
+### 2) Resource allocation and capacity planning
+- Baseline API capacity starts with a minimum of 2 App Service instances and scales horizontally based on CPU, memory, queue depth, and API P95 latency thresholds.
+- Peak request control is enforced through Azure API Management: 60 requests per minute and 10 concurrent connections per authenticated client.
+- Upload metadata requests remain bounded by API payload limits, while document binaries are uploaded directly to Azure Blob Storage through short-lived SAS permissions.
+- Azure SQL connection pools are separated by workload: API read/write, audit/outbox, and Function processing, with explicit command timeouts and exhaustion behavior.
+- Azure Managed Redis reduces marketplace read pressure only; Azure SQL Database remains the source of truth for listings and investment metrics.
+- The backend API does not process document bytes synchronously. Azure Event Grid, Azure Queue Storage, and Azure Functions absorb upload and processing spikes.
+- Timeout, retry, circuit breaker, and idempotency rules are defined for SQL, Blob Storage, Redis, Queue Storage, Notification Hubs, and external identity validation.
+
+### 3) Business-rule parameterization and deterministic workflows
+- The document intake workflow is deterministic and traceable from upload permission request to Blob upload, queued processing, status update, audit event, and user notification.
+- Document processing states use the official lifecycle: `Pending`, `Processing`, `Completed`, and `Failed`.
+- Certification decisions use the official decision set: `Approved`, `Rejected`, and `NeedsChanges`.
+- Validation, retention, scoring, and trust-level assignment are parameterized through backend-owned rule sets and strategy interfaces.
+- Technical processing failures move documents to `Failed`; business validation issues or incomplete submissions move the certification workflow to `NeedsChanges`.
+- Every meaningful state transition creates audit and observability records with correlation ID, actor context, aggregate reference, and timestamp.
+
+### 4) AI integration scope
+- The current backend design contains no AI agent module.
+- Agentic AI patterns such as ReAct, Reflection, Planning, Tool Use, and Multi-Agent Collaboration are outside the current scope.
+- Future AI-assisted financial analysis or document review is introduced as a separate bounded capability with explicit evaluation, safety, auditability, and human-review rules.
+- Current validation, certification, retention, and marketplace workflows remain deterministic and service-driven.
+
+### 5) Interfaces, adapters, and external integrations
+- APIs are contract-first through OpenAPI / Swagger, with request and response DTOs documenting the integration surface.
+- Controllers stay thin and delegate business workflow coordination to domain services.
+- `IdentityAccessService`, `DocumentIntakeService`, `CertificationValidationService`, `MarketplaceReadService`, `InvestmentDetailService`, `AuditObservabilityService`, and `RetentionArchivalService` coordinate backend workflows.
+- Repository contracts isolate domain services from Azure SQL Database persistence details.
+- Adapters isolate Azure Blob Storage, Azure Managed Redis, Azure Event Grid, Azure Notification Hubs, Auth0 + Microsoft Entra ID, Azure Queue Storage, and Azure Application Insights.
+- Azure API Management handles gateway-level responsibilities such as routing, throttling, quotas, payload limits, and shared request policies.
+- ASP.NET Core middleware handles application-level cross-cutting concerns such as authentication, authorization, error mapping, correlation IDs, telemetry, and health checks.
+- Correlation ID propagates across API requests, async workers, outbox messages, audit entries, and telemetry records.
+- External dependency failure modes define timeout, retry, dead-letter, and compensating behavior.
+
+### 6) Asynchronous processing, reliability, and observability
+- Azure Event Grid detects and routes Blob-created events after direct uploads complete.
+- Azure Queue Storage buffers document processing work and smooths upload spikes.
+- Azure Functions consume queued document events and update document and batch status in Azure SQL Database.
+- `OutboxMessage` stores reliable side effects after committed state changes for audit, telemetry, and user-facing notifications.
+- Azure Notification Hubs is used only for user-facing notification delivery and is not part of document processing.
+- Azure Application Insights and Azure Monitor capture traces, metrics, exceptions, dependency telemetry, health status, queue depth, retry counts, and failed-message counts.
+- Liveness and readiness health endpoints expose API and worker availability to operational monitoring.
+- Failed asynchronous processing remains retryable, auditable, and traceable through correlation IDs.
+
 ## Source Code
 
 ### Backend scaffold generation scope
