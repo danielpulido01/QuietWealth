@@ -1940,6 +1940,18 @@ flowchart TD
 - Liveness and readiness health endpoints expose API and worker availability to operational monitoring.
 - Failed asynchronous processing remains retryable, auditable, and traceable through correlation IDs.
 
+### 7) Connection management, pooling, and threading
+- ASP.NET Core request threads must not be blocked by long-running document processing.
+- Document processing runs through Azure Queue Storage and Azure Functions, not synchronous API threads.
+- Azure SQL access uses bounded connection pools with explicit command timeouts.
+- API read/write, audit/outbox, and Function processing workloads use explicit connection limits and monitoring boundaries.
+- Redis connections are reused through a shared cache client and are used only for marketplace reads.
+- Blob uploads use SAS direct upload, so the API does not hold request threads while transferring document bytes.
+- Retry policies use bounded retries with exponential backoff to avoid connection exhaustion.
+- `CancellationToken` is propagated through controllers, services, repositories, adapters, and workers.
+- Background workers process queue messages with controlled concurrency, retry limits, and queue visibility timeout handling.
+- Azure Application Insights and Azure Monitor track dependency latency, connection failures, queue depth, retries, and worker failures.
+
 ## Source Code
 
 ### Backend scaffold generation scope
