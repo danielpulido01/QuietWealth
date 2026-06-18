@@ -1675,8 +1675,9 @@ Errors: `401 Unauthorized` for invalid or expired tokens, `403 Forbidden` for mi
 5. Azure Event Grid routes the Blob-created event to Azure Queue Storage.
 6. An Azure Function Queue Trigger reads the queue message, processes the file, validates checksum/metadata, and updates `SourceDocument.validation_status` in Azure SQL: `Pending`, `Processing`, `Completed`, or `Failed`.
 7. The function updates `DocumentBatch.status` in Azure SQL based on the batch result: `Pending`, `Processing`, `Completed`, or `Failed`.
-8. OutboxMessage records are created for audit, notification, and observability side effects.
-9. React polls `GET /api/trust-record-applications/{id}/status` or receives a user-facing notification through Azure Notification Hubs. Azure Notification Hubs is not part of document processing.
+8. When validation or processing fails, the function sets `SourceDocument.validation_status = Failed` and writes `SourceDocument.processing_error_reason`.
+9. OutboxMessage records are created for audit, notification, and observability side effects.
+10. React polls `GET /api/trust-record-applications/{id}/status` or receives a user-facing notification through Azure Notification Hubs. Azure Notification Hubs is not part of document processing.
 
 Errors: `400 Bad Request` for invalid files, `413 Payload Too Large` for oversized uploads, `503 Service Unavailable` for storage failures.
 
@@ -1729,10 +1730,10 @@ Errors: `404 Not Found` for missing or non-visible SMEs, `403 Forbidden` for res
 1. Domain services emit events for meaningful business transitions.
 2. Events include correlation id, actor id, timestamp, event type, aggregate id, and safe metadata.
 3. Audit entries are saved through [`IAuditEntryRepository`](/server/QuietWealth.Backend/domains/audit-observability/repositories/IAuditEntryRepository.cs) in the same transaction as the business state change.
-4. A matching `OutboxMessage` is inserted into `outbox_messages` with `status = pending`, `retry_count = 0`, aggregate reference, payload JSON, and correlation id.
-5. An outbox publisher worker reads pending messages, sends logs/traces to Azure Application Insights, and marks successful messages as `published`.
-6. If publishing fails, the worker increments `retry_count`, keeps the message pending, and retries with exponential backoff.
-7. Messages that exceed the retry limit are marked `failed`, logged as operational incidents, and kept for manual replay or investigation.
+4. A matching `OutboxMessage` is inserted into `outbox_messages` with `status = Pending`, `retry_count = 0`, aggregate reference, payload JSON, and correlation id.
+5. An outbox publisher worker reads `Pending` or retryable `Failed` messages, sends logs/traces to Azure Application Insights, and marks successful messages as `Published`.
+6. If publishing fails and retries remain, the worker updates `failure_reason` and `last_attempted_at_utc`, increments `retry_count`, and marks the message as `Failed`.
+7. Messages that exceed the retry limit are marked `DeadLettered`, have `dead_lettered_at_utc` updated, are logged as operational incidents, and are kept for manual replay or investigation.
 8. Azure Monitor tracks authentication, uploads, validation decisions, failures, outbox age, retry count, and failed-message count.
 
 Errors: audit persistence failures fail the current transaction; telemetry publishing failures do not block the user flow because they are retried through `outbox_messages`.
@@ -2973,9 +2974,10 @@ erDiagram
     uniqueidentifier document_batch_id FK
     nvarchar file_name
     nvarchar content_type
-    nvarchar upload_status
+    nvarchar validation_status
     nvarchar blob_path
     nvarchar checksum
+    nvarchar processing_error_reason
   }
 
   CERTIFICATION_REVIEW {
@@ -3031,7 +3033,7 @@ erDiagram
     uniqueidentifier artifact_id
     nvarchar storage_tier
     nvarchar lifecycle_status
-    boolean legal_hold
+    bit legal_hold
     nvarchar archive_path
     datetimeoffset retained_until_utc
     datetimeoffset archived_at_utc
@@ -3045,8 +3047,11 @@ erDiagram
     nvarchar payload_json
     nvarchar status
     int retry_count
+    nvarchar failure_reason
     datetimeoffset created_at_utc
+    datetimeoffset last_attempted_at_utc
     datetimeoffset published_at_utc
+    datetimeoffset dead_lettered_at_utc
   }
 
   SME_PROFILE ||--o{ DOCUMENT_BATCH : owns
@@ -3094,6 +3099,11 @@ Table document_batches {
   owner_user_id uniqueidentifier [not null]
   status nvarchar(40) [not null]
   created_at_utc datetimeoffset [not null]
+
+  indexes {
+    (sme_profile_id, status)
+    (owner_user_id, created_at_utc)
+  }
 }
 
 Table source_documents {
@@ -3101,9 +3111,14 @@ Table source_documents {
   document_batch_id uniqueidentifier [not null, ref: > document_batches.document_batch_id]
   file_name nvarchar(260) [not null]
   content_type nvarchar(120) [not null]
-  upload_status nvarchar(40) [not null]
+  validation_status nvarchar(40) [not null]
   blob_path nvarchar(500)
   checksum nvarchar(128)
+  processing_error_reason nvarchar(1000)
+
+  indexes {
+    (document_batch_id, validation_status)
+  }
 }
 
 Table certification_reviews {
@@ -3161,6 +3176,12 @@ Table audit_entries {
   aggregate_type nvarchar(120)
   aggregate_id uniqueidentifier
   occurred_at_utc datetimeoffset [not null]
+
+  indexes {
+    (aggregate_type, aggregate_id)
+    (actor_user_id, occurred_at_utc)
+    correlation_id
+  }
 }
 
 Table retention_records {
@@ -3176,8 +3197,7 @@ Table retention_records {
 
   indexes {
     (artifact_type, artifact_id)
-    lifecycle_status
-    legal_hold
+    (lifecycle_status, retained_until_utc, legal_hold)
   }
 }
 
@@ -3189,8 +3209,11 @@ Table outbox_messages {
   payload_json nvarchar(max) [not null]
   status nvarchar(40) [not null]
   retry_count int [not null, default: 0]
+  failure_reason nvarchar(1000)
   created_at_utc datetimeoffset [not null]
+  last_attempted_at_utc datetimeoffset
   published_at_utc datetimeoffset
+  dead_lettered_at_utc datetimeoffset
 
   indexes {
     (status, created_at_utc)
@@ -3203,13 +3226,15 @@ Table outbox_messages {
 `audit_entries.aggregate_type + aggregate_id`, `retention_records.artifact_type + artifact_id`, and `outbox_messages.aggregate_type + aggregate_id` are polymorphic references. They intentionally do not use physical foreign keys because they can point to records from multiple bounded contexts. Referential integrity is enforced in domain services and covered by repository tests.
 
 ## Data integrity rules
-- A `SourceDocument` cannot be marked as `Completed` without `blob_path` and `checksum`; failed files keep `upload_status = Failed` and an error reason.
+- A `SourceDocument` cannot be marked as `Completed` without `blob_path` and `checksum`; failed files keep `validation_status = Failed` and `processing_error_reason`.
+- `DocumentBatch.status` allowed values: `Pending`, `Processing`, `Completed`, `Failed`, `UnderReview`, `Approved`, `Rejected`, `NeedsChanges`, `Archived`.
+- `CertificationReview.decision` allowed values: `Approved`, `Rejected`, `NeedsChanges`.
 - A `DocumentBatch` can move to review only when at least one valid `SourceDocument` exists.
 - A `CertificationReview` can be created only for an existing `DocumentBatch`.
 - Only SMEs with approved certification can appear in `MarketplaceListing`.
 - `AuditEntry` records are append-only.
 - `RetentionRecord` operations must be idempotent and preserve original artifact linkage, storage tier, retention date, and `legal_hold` state.
-- `OutboxMessage` records move from `pending` to `published` only after successful asynchronous publication.
+- `OutboxMessage` records move from `Pending` to `Published`, `Failed`, or `DeadLettered`.
 
 ## Creation, migration, and seed strategy
 - Creation scripts live under `server/deploy/sql/create/`.
@@ -3217,6 +3242,10 @@ Table outbox_messages {
 - Migration scripts live under `server/deploy/sql/migrations/` and use timestamped names such as `20260607_add_certification_reviews.sql`.
 - Rollback scripts live under `server/deploy/sql/rollback/` and use the same timestamp prefix as the migration they revert.
 - MVP seed data includes sample SME profiles, certified marketplace listings, document batches, source documents, investment metrics, access policies, and audit events.
+- Migrations that rename status fields must include backfill scripts.
+- Status value migrations must normalize casing, such as `pending` to `Pending`.
+- Large table changes must include lock-risk notes and rollback steps.
+- Rollback scripts must preserve audit, retention, and outbox lineage.
 
 ## Database review agents and automated checks
 | Agent/check | Responsibility |
