@@ -3,38 +3,44 @@
     Provision QuietWealth Azure infrastructure via Bicep.
 
 .DESCRIPTION
-    Creates (or updates) the Resource Group, App Service Plan, frontend Web App
-    (Node.js), and API Web App (.NET 10) for the target environment.
+    Creates or updates the resource group and platform resources for the target
+    environment using the matching .bicepparam file in infra/parameters.
 
-    Secrets are read from environment variables — never from this file.
-    Set them before running:
+    Secrets are read from environment variables so they never need to be stored
+    in source control. See deploy.secrets.example.ps1 for the required names.
 
-        $env:SUPABASE_URL         = 'https://<ref>.supabase.co'
-        $env:SUPABASE_SERVICE_KEY = '<service_role key>'
-
-    Requires: Azure CLI (az) logged in with Contributor on the target subscription.
+    Requires Azure CLI (az) logged in with access to the target subscription.
 
 .PARAMETER Environment
-    Target environment: 'dev' or 'prod'.
+    Target environment: dev, qa, or prod.
+
+.PARAMETER WhatIf
+    Run an Azure deployment what-if instead of creating resources.
 
 .EXAMPLE
-    .\deploy.ps1 -Environment qa
-    .\deploy.ps1 -Environment prod
+    .\deploy.ps1 -Environment dev
+
+.EXAMPLE
+    .\deploy.ps1 -Environment prod -WhatIf
 #>
 
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('qa', 'prod')]
-    [string]$Environment
+    [ValidateSet('dev', 'qa', 'prod')]
+    [string]$Environment,
+
+    [switch]$WhatIf
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# ── Pre-flight checks ─────────────────────────────────────────────────────────
-
 $required = @(
+    'AZURE_SQL_ADMIN_PASSWORD'
+    'AZURE_SQL_CONNECTION_STRING'
+    'AZURE_BLOB_CONNECTION_STRING'
+    'AZURE_NOTIFICATION_HUB_CONNECTION_STRING'
     'SUPABASE_URL'
     'SUPABASE_SERVICE_KEY'
 )
@@ -49,33 +55,39 @@ if (-not $az) {
     Write-Error "Azure CLI not found. Install from https://learn.microsoft.com/cli/azure/install-azure-cli"
 }
 
-# ── Deployment ────────────────────────────────────────────────────────────────
+$paramFile = Join-Path $PSScriptRoot "parameters\$Environment.bicepparam"
+$mainBicep = Join-Path $PSScriptRoot 'main.bicep'
 
-$paramFile   = Join-Path $PSScriptRoot "parameters\$Environment.bicepparam"
-$mainBicep   = Join-Path $PSScriptRoot "main.bicep"
-$deployName  = "dp-$Environment-$(Get-Date -Format 'yyyyMMdd-HHmm')"
-
-# Subscription-level deployments require a metadata location (any valid region).
-# Actual resource locations are controlled by the .bicepparam file.
-$metaLocation = 'westcentralus'
-
-Write-Host ""
-Write-Host "  Environment : $Environment" -ForegroundColor Cyan
-Write-Host "  Parameters  : $paramFile"
-Write-Host "  Deployment  : $deployName"
-Write-Host ""
-
-az deployment sub create `
-    --name        $deployName `
-    --location    $metaLocation `
-    --template-file $mainBicep `
-    --parameters  $paramFile `
-    --output      table
-
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "Deployment failed. Check the output above."
+if (-not (Test-Path -LiteralPath $paramFile)) {
+    Write-Error "Parameter file not found: $paramFile"
 }
 
-Write-Host ""
-Write-Host "Provisioning complete." -ForegroundColor Green
-Write-Host "App code is deployed separately via GitHub Actions (push to main)."
+$deploymentName = "qw-$Environment-$(Get-Date -Format 'yyyyMMdd-HHmm')"
+$metadataLocation = 'westcentralus'
+$command = if ($WhatIf) { 'what-if' } else { 'create' }
+
+Write-Host ''
+Write-Host "  Environment : $Environment" -ForegroundColor Cyan
+Write-Host "  Parameters  : $paramFile"
+Write-Host "  Template    : $mainBicep"
+Write-Host "  Action      : $command"
+Write-Host "  Deployment  : $deploymentName"
+Write-Host ''
+
+az deployment sub $command `
+    --name $deploymentName `
+    --location $metadataLocation `
+    --template-file $mainBicep `
+    --parameters $paramFile `
+    --output table
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Deployment command failed. Review the Azure CLI output above."
+}
+
+Write-Host ''
+if ($WhatIf) {
+    Write-Host 'What-if completed.' -ForegroundColor Green
+} else {
+    Write-Host 'Provisioning complete.' -ForegroundColor Green
+}

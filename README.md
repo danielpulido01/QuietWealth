@@ -1343,6 +1343,95 @@ classDiagram
 - Standard tool: **GitHub Actions** (single CI/CD control plane from this monorepo).
 - Rationale: repository-native workflows, PR checks, environments, approvals, and OIDC-based Azure deployment.
 
+### GitHub Environments
+Two environments must exist in the repo settings:
+
+| Environment | Branch | App suffix |
+|---|---|---|
+| `QA` | `staging` | `qa*` |
+| `Production` | `main` | `prod*` |
+
+#### Secrets (stored per GitHub environment)
+
+**QA environment:**
+```
+AZUREAPPSERVICE_CLIENTID_QA_FRONTEND
+AZUREAPPSERVICE_CLIENTID_QA_API
+AZUREAPPSERVICE_TENANTID_QA
+AZUREAPPSERVICE_SUBSCRIPTIONID_QA
+NEXT_PUBLIC_API_BASE_URL             ← build-time only, frontend
+```
+
+**Production environment:**
+```
+AZUREAPPSERVICE_CLIENTID_PROD_FRONTEND
+AZUREAPPSERVICE_CLIENTID_PROD_API
+AZUREAPPSERVICE_TENANTID_PROD
+AZUREAPPSERVICE_SUBSCRIPTIONID_PROD
+NEXT_PUBLIC_API_BASE_URL_PROD        ← build-time only, frontend
+```
+
+`NEXT_PUBLIC_API_BASE_URL*` is injected as `env:` on the `npm run build` step — baked into the Next.js bundle at build time. It is **not** an Azure app setting.
+
+**Azure login step:**
+```yaml
+- uses: azure/login@v2
+  with:
+    client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_QA_FRONTEND }}
+    tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_QA }}
+    subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_QA }}
+```
+
+### OIDC / Entra ID Setup (`infra/setup-github-oidc.ps1`)
+Run once per environment. Idempotent. Require `az login` + `gh auth login`.
+For each of the 4 app/role combos (`prod-frontend`, `prod-api`, `qa-frontend`, `qa-api`):
+
+1. Create Entra ID app registration named `dp-{env}-{role}-deploy`
+2. Create a service principal for it
+3. Add a federated credential:
+   - issuer: `https://token.actions.githubusercontent.com`
+   - subject: `repo:{owner/repo}:environment:{Production|QA}`
+   - audience: `api://AzureADTokenExchange`
+4. Assign `Contributor` role scoped to the specific Web App resource (not subscription-wide)
+5. Call `gh secret set` to write the 3 OIDC secrets into the correct GitHub environment
+
+Each Web App has its own Entra app registration and `clientId`. `tenantId` and `subscriptionId` are shared within an environment.
+
+### CI Workflows
+Four workflow files, all following the same structure.
+
+**Triggers:**
+- Push to `main` → `paths: server/**` or `app/**` → deploys to Production
+- Push to `staging` → same path filters → deploys to QA
+- All support `workflow_dispatch`
+
+**Job pattern:**
+```
+build (environment: QA|Production, permissions: contents:read)
+  └─ deploy (needs: build, permissions: id-token:write + contents:read)
+```
+
+To enable OIDC token exchange with azure, `id-token: write` is required on the `deploy` job only.
+
+#### Trigger Conditions & Job Dependencies
+
+| Workflow file | Branch | Path filter | Artifact name |
+|---|---|---|---|
+| `main_prodquietwealth-frontend.yml` | `main` | `app/**` | `node-app` |
+| `main_prodquietwealth-api.yml` | `main` | `server/**` | `.net-app` |
+| `staging_qaquietwealth-frontend.yml` | `staging` | `app/**` | `node-app` |
+| `staging_qaquietwealth-api.yml` | `staging` | `server/**` | `.net-app` |
+
+Artifact is passed between jobs via `actions/upload-artifact` / `actions/download-artifact`.
+
+#### Key Constraints
+
+- Each Web App has its **own** Entra app registration and `clientId` — do not share across frontend/API
+- `id-token: write` must be on the **deploy job**, not the build job
+- `NEXT_PUBLIC_*` vars are build-time settings, not runtime app settings — must be in the build job's `env:` block
+- `ConnectionStrings__QuietWealthSql`, `BlobStorage__ConnectionString`, and `NotificationHub__ConnectionString` use ASP.NET Core's double-underscore config convention
+- Bicep `@secure()` params never appear in deployment logs
+
 ### Infrastructure as Code (IaC)
 - Standard tool: **Bicep** for provisioning and updates across environments.
 - Managed resources via Bicep:
@@ -1358,6 +1447,72 @@ classDiagram
 - Azure Data Factory
 - Azure Notification Hubs
 - Observability resources (Application Insights / Azure Monitor where applicable)
+
+#### Bicep Infra (`infra/`)
+
+**Scope:** `subscription` level — creates the resource group itself.
+
+**Locations:**
+- RG metadata: `eastus`
+- Resources deployed to: `westcentralus`
+
+**Per-environment resources:**
+- Linux App Service Plan `asp-dp-{env}` — SKU B1 (shared)
+- Frontend Web App (`Node|24-lts`) — startup: `npx --yes serve -s . -l $PORT`
+- API Web App (`DOTNETCORE|10.0`) — startup: `dotnet QuietWealth.Api.dll`
+
+**API app settings provisioned by Bicep:**
+```
+ASPNETCORE_ENVIRONMENT    = "Production" (prod) | "Development" (qa — enables Swagger)
+ConnectionStrings__QuietWealthSql = <from AZURE_SQL_CONNECTION_STRING env var>
+BlobStorage__ConnectionString     = <from AZURE_BLOB_CONNECTION_STRING env var>
+NotificationHub__ConnectionString = <from AZURE_NOTIFICATION_HUB_CONNECTION_STRING env var>
+AllowedOrigins__0         = https://{frontendAppName}.azurewebsites.net
+WEBSITE_RUN_FROM_PACKAGE  = 1
+```
+
+**Frontend app settings provisioned by Bicep:**
+```
+WEBSITE_NODE_DEFAULT_VERSION   = ~20
+SCM_DO_BUILD_DURING_DEPLOYMENT = false   ← disables Oryx; we ship pre-built /dist
+```
+
+**Parameters per environment:**
+
+| Param | qa | prod |
+|---|---|---|
+| `resourceGroupName` | `QuietWealth` | `QuietWealth` |
+| `resourceGroupLocation` | `eastus` | `eastus` |
+| `servicesLocation` | `westcentralus` | `westcentralus` |
+| `appServicePlanSku` | `B1` | `B1` |
+| `frontendAppName` | `qaquietwealth-frontend` | `prodquietwealth-frontend` |
+| `apiAppName` | `qaquietwealth-api` | `prodquietwealth-api` |
+
+**Secrets flow into Bicep via `.bicepparam`:**
+```bicep
+param sqlConnectionString             = readEnvironmentVariable('AZURE_SQL_CONNECTION_STRING', '')
+param blobStorageConnectionString     = readEnvironmentVariable('AZURE_BLOB_CONNECTION_STRING', '')
+param notificationHubConnectionString = readEnvironmentVariable('AZURE_NOTIFICATION_HUB_CONNECTION_STRING', '')
+```
+
+Set before running `deploy.ps1`:
+```powershell
+$env:AZURE_SQL_CONNECTION_STRING = '...'
+$env:AZURE_BLOB_CONNECTION_STRING = '...'
+$env:AZURE_NOTIFICATION_HUB_CONNECTION_STRING = '...'
+.\deploy.ps1 -Environment qa   # or prod
+```
+
+Local values live in `deploy.secrets.ps1` (gitignored via `*.secrets.ps1`). These secrets are never in GitHub Actions secrets — infra deployment is manual only.
+
+**Deploy command (run by `deploy.ps1`):**
+```powershell
+az deployment sub create `
+  --name        dp-{env}-{timestamp} `
+  --location    westcentralus `
+  --template-file main.bicep `
+  --parameters  parameters/{env}.bicepparam
+```
 
 ### Environments and deployment model
 - Environments: `dev`, `stage`, `prod` (isolated by resource group and/or subscription).
@@ -1383,7 +1538,6 @@ classDiagram
 
 ## Availability
 Target availability: **99.9%** for the MVP and course demo scope. Higher availability targets require multi-region APIM, zone-redundant App Service, and zone-redundant SQL.
-<<Validar con el profesor si 99.9% es suficiente para el alcance del curso>>
 
 ### Resilience patterns (required)
 - Circuit breaker per downstream dependency (SQL, Blob, Notification Hubs, external APIs) to fail fast when an integration is unhealthy and protect API latency.
@@ -1772,183 +1926,6 @@ flowchart TD
   - `certification-validation-to-marketplace`
   - `all-domains-to-audit-observability`
   - <<Agregar otros ACLs si aparecen dependencias cross-domain>>
-
-
-### CI/CD and IaC source folders
-
-#### GitHub Environments
-Two environments must exist in the repo settings:
-
-| Environment | Branch | App suffix |
-|---|---|---|
-| `QA` | `staging` | `qa*` |
-| `Production` | `main` | `prod*` |
-
-#### Workflows
-Four workflow files, all following the same structure.
-
-**Triggers:**
-- Push to `main` → `paths: server/**` or `app/**` → deploys to Production
-- Push to `staging` → same path filters → deploys to QA
-- All support `workflow_dispatch`
-
-**Job pattern:**
-```
-build (environment: QA|Production, permissions: contents:read)
-  └─ deploy (needs: build, permissions: id-token:write + contents:read)
-```
-
-To enable OIDC token exchange with azure, `id-token: write` is required on the `deploy` job only.
-
-#### Secrets (stored per GitHub environment)
-
-**QA environment:**
-```
-AZUREAPPSERVICE_CLIENTID_QA_FRONTEND
-AZUREAPPSERVICE_CLIENTID_QA_API
-AZUREAPPSERVICE_TENANTID_QA
-AZUREAPPSERVICE_SUBSCRIPTIONID_QA
-NEXT_PUBLIC_API_BASE_URL             ← build-time only, frontend
-```
-
-**Production environment:**
-```
-AZUREAPPSERVICE_CLIENTID_PROD_FRONTEND
-AZUREAPPSERVICE_CLIENTID_PROD_API
-AZUREAPPSERVICE_TENANTID_PROD
-AZUREAPPSERVICE_SUBSCRIPTIONID_PROD
-NEXT_PUBLIC_API_BASE_URL_PROD        ← build-time only, frontend
-```
-
-`NEXT_PUBLIC_API_BASE_URL*` is injected as `env:` on the `npm run build` step — baked into the Next.js bundle at build time. It is **not** an Azure app setting.
-
-**Azure login step:**
-```yaml
-- uses: azure/login@v2
-  with:
-    client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_QA_FRONTEND }}
-    tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_QA }}
-    subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_QA }}
-```
-
-#### OIDC / Entra ID Setup (`infra/setup-github-oidc.ps1`)
-Run once per environment. Idempotent. Require `az login` + `gh auth login`.
-For each of the 4 app/role combos (`prod-frontend`, `prod-api`, `qa-frontend`, `qa-api`):
-
-1. Create Entra ID app registration named `dp-{env}-{role}-deploy`
-2. Create a service principal for it
-3. Add a federated credential:
-   - issuer: `https://token.actions.githubusercontent.com`
-   - subject: `repo:{owner/repo}:environment:{Production|QA}`
-   - audience: `api://AzureADTokenExchange`
-4. Assign `Contributor` role scoped to the specific Web App resource (not subscription-wide)
-5. Call `gh secret set` to write the 3 OIDC secrets into the correct GitHub environment
-
-Each Web App has its own Entra app registration and `clientId`. `tenantId` and `subscriptionId` are shared within an environment.
-
-#### Bicep Infra (`infra/`)
-
-**Scope:** `subscription` level — creates the resource group itself.
-
-**Locations:**
-- RG metadata: `eastus`
-- Resources deployed to: `westcentralus`
-
-**Per-environment resources:**
-- Linux App Service Plan `asp-dp-{env}` — SKU B1 (shared)
-- Frontend Web App (`Node|24-lts`) — startup: `npx --yes serve -s . -l $PORT`
-- API Web App (`DOTNETCORE|10.0`) — startup: `dotnet QuietWealth.Api.dll`
-
-**API app settings provisioned by Bicep:**
-```
-ASPNETCORE_ENVIRONMENT    = "Production" (prod) | "Development" (qa — enables Swagger)
-ConnectionStrings__QuietWealthSql = <from AZURE_SQL_CONNECTION_STRING env var>
-BlobStorage__ConnectionString     = <from AZURE_BLOB_CONNECTION_STRING env var>
-NotificationHub__ConnectionString = <from AZURE_NOTIFICATION_HUB_CONNECTION_STRING env var>
-AllowedOrigins__0         = https://{frontendAppName}.azurewebsites.net
-WEBSITE_RUN_FROM_PACKAGE  = 1
-```
-
-**Frontend app settings provisioned by Bicep:**
-```
-WEBSITE_NODE_DEFAULT_VERSION   = ~20
-SCM_DO_BUILD_DURING_DEPLOYMENT = false   ← disables Oryx; we ship pre-built /dist
-```
-
-**Parameters per environment:**
-
-| Param | qa | prod |
-|---|---|---|
-| `resourceGroupName` | `QuietWealth` | `QuietWealth` |
-| `resourceGroupLocation` | `eastus` | `eastus` |
-| `servicesLocation` | `westcentralus` | `westcentralus` |
-| `appServicePlanSku` | `B1` | `B1` |
-| `frontendAppName` | `qaquietwealth-frontend` | `prodquietwealth-frontend` |
-| `apiAppName` | `qaquietwealth-api` | `prodquietwealth-api` |
-
-**Secrets flow into Bicep via `.bicepparam`:**
-```bicep
-param sqlConnectionString             = readEnvironmentVariable('AZURE_SQL_CONNECTION_STRING', '')
-param blobStorageConnectionString     = readEnvironmentVariable('AZURE_BLOB_CONNECTION_STRING', '')
-param notificationHubConnectionString = readEnvironmentVariable('AZURE_NOTIFICATION_HUB_CONNECTION_STRING', '')
-```
-
-Set before running `deploy.ps1`:
-```powershell
-$env:AZURE_SQL_CONNECTION_STRING = '...'
-$env:AZURE_BLOB_CONNECTION_STRING = '...'
-$env:AZURE_NOTIFICATION_HUB_CONNECTION_STRING = '...'
-.\deploy.ps1 -Environment qa   # or prod
-```
-
-Local values live in `deploy.secrets.ps1` (gitignored via `*.secrets.ps1`). These secrets are never in GitHub Actions secrets — infra deployment is manual only.
-
-**Deploy command (run by `deploy.ps1`):**
-```powershell
-az deployment sub create `
-  --name        dp-{env}-{timestamp} `
-  --location    westcentralus `
-  --template-file main.bicep `
-  --parameters  parameters/{env}.bicepparam
-```
-
-#### Trigger Conditions & Job Dependencies
-
-| Workflow file | Branch | Path filter | Artifact name |
-|---|---|---|---|
-| `main_prodquietwealth-frontend.yml` | `main` | `app/**` | `node-app` |
-| `main_prodquietwealth-api.yml` | `main` | `server/**` | `.net-app` |
-| `staging_qaquietwealth-frontend.yml` | `staging` | `app/**` | `node-app` |
-| `staging_qaquietwealth-api.yml` | `staging` | `server/**` | `.net-app` |
-
-Artifact is passed between jobs via `actions/upload-artifact` / `actions/download-artifact`.
-
-#### Key Constraints
-
-- Each Web App has its **own** Entra app registration and `clientId` — do not share across frontend/API
-- `id-token: write` must be on the **deploy job**, not the build job
-- `NEXT_PUBLIC_*` vars are build-time settings, not runtime app settings — must be in the build job's `env:` block
-- `ConnectionStrings__QuietWealthSql`, `BlobStorage__ConnectionString`, and `NotificationHub__ConnectionString` use ASP.NET Core's double-underscore config convention
-- Bicep `@secure()` params never appear in deployment logs
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 ### Scaffold acceptance criteria
 - Solution compiles successfully with empty/stub implementations.

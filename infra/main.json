@@ -1,0 +1,1267 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.43.8.12551",
+      "templateHash": "1920074909125132877"
+    }
+  },
+  "parameters": {
+    "environment": {
+      "type": "string",
+      "allowedValues": [
+        "dev",
+        "qa",
+        "prod"
+      ],
+      "metadata": {
+        "description": "Target environment."
+      }
+    },
+    "resourceGroupLocation": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure region for the resource group metadata."
+      }
+    },
+    "servicesLocation": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure region where platform resources are deployed."
+      }
+    },
+    "resourceGroupName": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource group name."
+      }
+    },
+    "namePrefix": {
+      "type": "string",
+      "metadata": {
+        "description": "Shared name prefix for environment resources."
+      }
+    },
+    "frontendAppName": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure Web App name for the frontend."
+      }
+    },
+    "frontendSlotName": {
+      "type": "string",
+      "defaultValue": "staging",
+      "metadata": {
+        "description": "Deployment slot name for the frontend when slots are enabled."
+      }
+    },
+    "apiAppName": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure Web App name for the API."
+      }
+    },
+    "apiSlotName": {
+      "type": "string",
+      "defaultValue": "staging",
+      "metadata": {
+        "description": "Deployment slot name for the API when slots are enabled."
+      }
+    },
+    "enableDeploymentSlots": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Enable deployment slots for production releases."
+      }
+    },
+    "appServicePlanSku": {
+      "type": "string",
+      "allowedValues": [
+        "F1",
+        "B1",
+        "B2",
+        "S1",
+        "P1v3"
+      ],
+      "metadata": {
+        "description": "Linux App Service Plan SKU."
+      }
+    },
+    "frontendRuntimeStack": {
+      "type": "string",
+      "defaultValue": "NODE|24-lts",
+      "metadata": {
+        "description": "Node runtime used by the frontend Web App."
+      }
+    },
+    "frontendNodeVersion": {
+      "type": "string",
+      "defaultValue": "~24",
+      "metadata": {
+        "description": "Node version app setting exposed to Kudu/Oryx."
+      }
+    },
+    "frontendStartupCommand": {
+      "type": "string",
+      "defaultValue": "npx --yes serve -s . -l $PORT",
+      "metadata": {
+        "description": "Startup command used by the frontend Web App."
+      }
+    },
+    "apiRuntimeStack": {
+      "type": "string",
+      "defaultValue": "DOTNETCORE|10.0",
+      "metadata": {
+        "description": "Runtime stack used by the API Web App."
+      }
+    },
+    "apiStartupCommand": {
+      "type": "string",
+      "defaultValue": "dotnet QuietWealth.Api.dll",
+      "metadata": {
+        "description": "Startup command used by the API Web App."
+      }
+    },
+    "apiPort": {
+      "type": "string",
+      "defaultValue": "8080",
+      "metadata": {
+        "description": "Logical API port placeholder for downstream configuration."
+      }
+    },
+    "sqlServerName": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure SQL logical server name."
+      }
+    },
+    "sqlDatabaseName": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure SQL database name."
+      }
+    },
+    "sqlAdministratorLogin": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure SQL administrator login."
+      }
+    },
+    "sqlAdministratorPassword": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Azure SQL administrator password."
+      }
+    },
+    "storageAccountName": {
+      "type": "string",
+      "metadata": {
+        "description": "Storage account name for blobs and queues."
+      }
+    },
+    "blobContainerName": {
+      "type": "string",
+      "defaultValue": "app-data",
+      "metadata": {
+        "description": "Primary blob container name."
+      }
+    },
+    "queueName": {
+      "type": "string",
+      "defaultValue": "jobs",
+      "metadata": {
+        "description": "Queue name for background processing."
+      }
+    },
+    "blobLifecycleArchiveAfterDays": {
+      "type": "int",
+      "defaultValue": 30,
+      "metadata": {
+        "description": "Days before lifecycle management archives old blobs."
+      }
+    },
+    "redisName": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure Cache for Redis instance name."
+      }
+    },
+    "eventGridTopicName": {
+      "type": "string",
+      "metadata": {
+        "description": "Event Grid custom topic name."
+      }
+    },
+    "functionAppName": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure Functions app name."
+      }
+    },
+    "functionWorkerRuntime": {
+      "type": "string",
+      "defaultValue": "dotnet-isolated",
+      "metadata": {
+        "description": "Functions worker runtime."
+      }
+    },
+    "functionRuntimeStack": {
+      "type": "string",
+      "defaultValue": "DOTNET-ISOLATED|8.0",
+      "metadata": {
+        "description": "Functions runtime stack."
+      }
+    },
+    "dataFactoryName": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure Data Factory name."
+      }
+    },
+    "notificationHubNamespaceName": {
+      "type": "string",
+      "metadata": {
+        "description": "Notification Hubs namespace name."
+      }
+    },
+    "notificationHubName": {
+      "type": "string",
+      "metadata": {
+        "description": "Notification Hub name."
+      }
+    },
+    "appInsightsName": {
+      "type": "string",
+      "metadata": {
+        "description": "Application Insights component name."
+      }
+    },
+    "logAnalyticsWorkspaceName": {
+      "type": "string",
+      "metadata": {
+        "description": "Log Analytics workspace name."
+      }
+    },
+    "apiManagementName": {
+      "type": "string",
+      "metadata": {
+        "description": "API Management service name."
+      }
+    },
+    "apiManagementPublisherName": {
+      "type": "string",
+      "metadata": {
+        "description": "API Management publisher display name placeholder."
+      }
+    },
+    "apiManagementPublisherEmail": {
+      "type": "string",
+      "metadata": {
+        "description": "API Management publisher email placeholder."
+      }
+    },
+    "apiManagementSkuName": {
+      "type": "string",
+      "defaultValue": "Developer",
+      "metadata": {
+        "description": "API Management SKU."
+      }
+    },
+    "apiManagementSkuCapacity": {
+      "type": "int",
+      "defaultValue": 1,
+      "metadata": {
+        "description": "API Management SKU capacity."
+      }
+    },
+    "redisSkuName": {
+      "type": "string",
+      "defaultValue": "Basic",
+      "metadata": {
+        "description": "Redis SKU name."
+      }
+    },
+    "redisSkuFamily": {
+      "type": "string",
+      "defaultValue": "C",
+      "metadata": {
+        "description": "Redis SKU family."
+      }
+    },
+    "redisSkuCapacity": {
+      "type": "int",
+      "defaultValue": 0,
+      "metadata": {
+        "description": "Redis SKU capacity."
+      }
+    },
+    "sqlConnectionString": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Application connection string for Azure SQL used by the API."
+      }
+    },
+    "blobStorageConnectionString": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Application connection string for Azure Blob Storage used by the API."
+      }
+    },
+    "notificationHubConnectionString": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Application connection string for Azure Notification Hubs used by the API."
+      }
+    },
+    "supabaseUrl": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Optional app-specific URL placeholder."
+      }
+    },
+    "supabaseServiceKey": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Optional app-specific service key placeholder."
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/resourceGroups",
+      "apiVersion": "2021-04-01",
+      "name": "[parameters('resourceGroupName')]",
+      "location": "[parameters('resourceGroupLocation')]",
+      "tags": {
+        "environment": "[parameters('environment')]",
+        "project": "QuietWealth"
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('quietwealth-platform-{0}', parameters('environment'))]",
+      "resourceGroup": "[parameters('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "environment": {
+            "value": "[parameters('environment')]"
+          },
+          "location": {
+            "value": "[parameters('servicesLocation')]"
+          },
+          "namePrefix": {
+            "value": "[parameters('namePrefix')]"
+          },
+          "frontendAppName": {
+            "value": "[parameters('frontendAppName')]"
+          },
+          "frontendSlotName": {
+            "value": "[parameters('frontendSlotName')]"
+          },
+          "apiAppName": {
+            "value": "[parameters('apiAppName')]"
+          },
+          "apiSlotName": {
+            "value": "[parameters('apiSlotName')]"
+          },
+          "enableDeploymentSlots": {
+            "value": "[parameters('enableDeploymentSlots')]"
+          },
+          "appServicePlanSku": {
+            "value": "[parameters('appServicePlanSku')]"
+          },
+          "frontendRuntimeStack": {
+            "value": "[parameters('frontendRuntimeStack')]"
+          },
+          "frontendNodeVersion": {
+            "value": "[parameters('frontendNodeVersion')]"
+          },
+          "frontendStartupCommand": {
+            "value": "[parameters('frontendStartupCommand')]"
+          },
+          "apiRuntimeStack": {
+            "value": "[parameters('apiRuntimeStack')]"
+          },
+          "apiStartupCommand": {
+            "value": "[parameters('apiStartupCommand')]"
+          },
+          "apiPort": {
+            "value": "[parameters('apiPort')]"
+          },
+          "sqlServerName": {
+            "value": "[parameters('sqlServerName')]"
+          },
+          "sqlDatabaseName": {
+            "value": "[parameters('sqlDatabaseName')]"
+          },
+          "sqlAdministratorLogin": {
+            "value": "[parameters('sqlAdministratorLogin')]"
+          },
+          "sqlAdministratorPassword": {
+            "value": "[parameters('sqlAdministratorPassword')]"
+          },
+          "storageAccountName": {
+            "value": "[parameters('storageAccountName')]"
+          },
+          "blobContainerName": {
+            "value": "[parameters('blobContainerName')]"
+          },
+          "queueName": {
+            "value": "[parameters('queueName')]"
+          },
+          "blobLifecycleArchiveAfterDays": {
+            "value": "[parameters('blobLifecycleArchiveAfterDays')]"
+          },
+          "redisName": {
+            "value": "[parameters('redisName')]"
+          },
+          "eventGridTopicName": {
+            "value": "[parameters('eventGridTopicName')]"
+          },
+          "functionAppName": {
+            "value": "[parameters('functionAppName')]"
+          },
+          "functionWorkerRuntime": {
+            "value": "[parameters('functionWorkerRuntime')]"
+          },
+          "functionRuntimeStack": {
+            "value": "[parameters('functionRuntimeStack')]"
+          },
+          "dataFactoryName": {
+            "value": "[parameters('dataFactoryName')]"
+          },
+          "notificationHubNamespaceName": {
+            "value": "[parameters('notificationHubNamespaceName')]"
+          },
+          "notificationHubName": {
+            "value": "[parameters('notificationHubName')]"
+          },
+          "appInsightsName": {
+            "value": "[parameters('appInsightsName')]"
+          },
+          "logAnalyticsWorkspaceName": {
+            "value": "[parameters('logAnalyticsWorkspaceName')]"
+          },
+          "apiManagementName": {
+            "value": "[parameters('apiManagementName')]"
+          },
+          "apiManagementPublisherName": {
+            "value": "[parameters('apiManagementPublisherName')]"
+          },
+          "apiManagementPublisherEmail": {
+            "value": "[parameters('apiManagementPublisherEmail')]"
+          },
+          "apiManagementSkuName": {
+            "value": "[parameters('apiManagementSkuName')]"
+          },
+          "apiManagementSkuCapacity": {
+            "value": "[parameters('apiManagementSkuCapacity')]"
+          },
+          "redisSkuName": {
+            "value": "[parameters('redisSkuName')]"
+          },
+          "redisSkuFamily": {
+            "value": "[parameters('redisSkuFamily')]"
+          },
+          "redisSkuCapacity": {
+            "value": "[parameters('redisSkuCapacity')]"
+          },
+          "sqlConnectionString": {
+            "value": "[parameters('sqlConnectionString')]"
+          },
+          "blobStorageConnectionString": {
+            "value": "[parameters('blobStorageConnectionString')]"
+          },
+          "notificationHubConnectionString": {
+            "value": "[parameters('notificationHubConnectionString')]"
+          },
+          "supabaseUrl": {
+            "value": "[parameters('supabaseUrl')]"
+          },
+          "supabaseServiceKey": {
+            "value": "[parameters('supabaseServiceKey')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.43.8.12551",
+              "templateHash": "5122916097273728283"
+            }
+          },
+          "parameters": {
+            "environment": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string"
+            },
+            "namePrefix": {
+              "type": "string"
+            },
+            "frontendAppName": {
+              "type": "string"
+            },
+            "frontendSlotName": {
+              "type": "string"
+            },
+            "apiAppName": {
+              "type": "string"
+            },
+            "apiSlotName": {
+              "type": "string"
+            },
+            "enableDeploymentSlots": {
+              "type": "bool"
+            },
+            "appServicePlanSku": {
+              "type": "string"
+            },
+            "frontendRuntimeStack": {
+              "type": "string"
+            },
+            "frontendNodeVersion": {
+              "type": "string"
+            },
+            "frontendStartupCommand": {
+              "type": "string"
+            },
+            "apiRuntimeStack": {
+              "type": "string"
+            },
+            "apiStartupCommand": {
+              "type": "string"
+            },
+            "apiPort": {
+              "type": "string"
+            },
+            "sqlServerName": {
+              "type": "string"
+            },
+            "sqlDatabaseName": {
+              "type": "string"
+            },
+            "sqlAdministratorLogin": {
+              "type": "string"
+            },
+            "sqlAdministratorPassword": {
+              "type": "securestring"
+            },
+            "storageAccountName": {
+              "type": "string"
+            },
+            "blobContainerName": {
+              "type": "string"
+            },
+            "queueName": {
+              "type": "string"
+            },
+            "blobLifecycleArchiveAfterDays": {
+              "type": "int"
+            },
+            "redisName": {
+              "type": "string"
+            },
+            "eventGridTopicName": {
+              "type": "string"
+            },
+            "functionAppName": {
+              "type": "string"
+            },
+            "functionWorkerRuntime": {
+              "type": "string"
+            },
+            "functionRuntimeStack": {
+              "type": "string"
+            },
+            "dataFactoryName": {
+              "type": "string"
+            },
+            "notificationHubNamespaceName": {
+              "type": "string"
+            },
+            "notificationHubName": {
+              "type": "string"
+            },
+            "appInsightsName": {
+              "type": "string"
+            },
+            "logAnalyticsWorkspaceName": {
+              "type": "string"
+            },
+            "apiManagementName": {
+              "type": "string"
+            },
+            "apiManagementPublisherName": {
+              "type": "string"
+            },
+            "apiManagementPublisherEmail": {
+              "type": "string"
+            },
+            "apiManagementSkuName": {
+              "type": "string"
+            },
+            "apiManagementSkuCapacity": {
+              "type": "int"
+            },
+            "redisSkuName": {
+              "type": "string"
+            },
+            "redisSkuFamily": {
+              "type": "string"
+            },
+            "redisSkuCapacity": {
+              "type": "int"
+            },
+            "sqlConnectionString": {
+              "type": "securestring"
+            },
+            "blobStorageConnectionString": {
+              "type": "securestring"
+            },
+            "notificationHubConnectionString": {
+              "type": "securestring"
+            },
+            "supabaseUrl": {
+              "type": "securestring"
+            },
+            "supabaseServiceKey": {
+              "type": "securestring"
+            }
+          },
+          "variables": {
+            "planName": "[format('asp-{0}', parameters('namePrefix'))]",
+            "aspnetEnv": "[if(equals(parameters('environment'), 'prod'), 'Production', 'Development')]",
+            "frontendOrigin": "[format('https://{0}.azurewebsites.net', parameters('frontendAppName'))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.OperationalInsights/workspaces",
+              "apiVersion": "2022-10-01",
+              "name": "[parameters('logAnalyticsWorkspaceName')]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "sku": {
+                  "name": "PerGB2018"
+                },
+                "retentionInDays": 30
+              },
+              "tags": {
+                "environment": "[parameters('environment')]",
+                "project": "QuietWealth",
+                "role": "observability"
+              }
+            },
+            {
+              "type": "Microsoft.Insights/components",
+              "apiVersion": "2020-02-02",
+              "name": "[parameters('appInsightsName')]",
+              "location": "[parameters('location')]",
+              "kind": "web",
+              "properties": {
+                "Application_Type": "web",
+                "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsWorkspaceName'))]"
+              },
+              "tags": {
+                "environment": "[parameters('environment')]",
+                "project": "QuietWealth",
+                "role": "observability"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsWorkspaceName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts",
+              "apiVersion": "2023-05-01",
+              "name": "[parameters('storageAccountName')]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "Standard_LRS"
+              },
+              "kind": "StorageV2",
+              "properties": {
+                "accessTier": "Hot",
+                "allowBlobPublicAccess": false,
+                "minimumTlsVersion": "TLS1_2",
+                "supportsHttpsTrafficOnly": true
+              },
+              "tags": {
+                "environment": "[parameters('environment')]",
+                "project": "QuietWealth",
+                "role": "storage"
+              }
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}', parameters('storageAccountName'), 'default')]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}/{2}', parameters('storageAccountName'), 'default', parameters('blobContainerName'))]",
+              "properties": {
+                "publicAccess": "None"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('storageAccountName'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/queueServices",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}', parameters('storageAccountName'), 'default')]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/queueServices/queues",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}/{2}', parameters('storageAccountName'), 'default', parameters('queueName'))]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/queueServices', parameters('storageAccountName'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/managementPolicies",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}', parameters('storageAccountName'), 'default')]",
+              "properties": {
+                "policy": {
+                  "rules": [
+                    {
+                      "name": "archive-old-blobs",
+                      "enabled": true,
+                      "type": "Lifecycle",
+                      "definition": {
+                        "filters": {
+                          "blobTypes": [
+                            "blockBlob"
+                          ],
+                          "prefixMatch": [
+                            "[format('{0}/', parameters('blobContainerName'))]"
+                          ]
+                        },
+                        "actions": {
+                          "baseBlob": {
+                            "tierToCool": {
+                              "daysAfterModificationGreaterThan": 7
+                            },
+                            "tierToArchive": {
+                              "daysAfterModificationGreaterThan": "[parameters('blobLifecycleArchiveAfterDays')]"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Sql/servers",
+              "apiVersion": "2022-05-01-preview",
+              "name": "[parameters('sqlServerName')]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "administratorLogin": "[parameters('sqlAdministratorLogin')]",
+                "administratorLoginPassword": "[parameters('sqlAdministratorPassword')]",
+                "minimalTlsVersion": "1.2",
+                "publicNetworkAccess": "Enabled"
+              },
+              "tags": {
+                "environment": "[parameters('environment')]",
+                "project": "QuietWealth",
+                "role": "database"
+              }
+            },
+            {
+              "type": "Microsoft.Sql/servers/firewallRules",
+              "apiVersion": "2022-05-01-preview",
+              "name": "[format('{0}/{1}', parameters('sqlServerName'), 'AllowAzureServices')]",
+              "properties": {
+                "startIpAddress": "0.0.0.0",
+                "endIpAddress": "0.0.0.0"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Sql/servers', parameters('sqlServerName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Sql/servers/databases",
+              "apiVersion": "2022-05-01-preview",
+              "name": "[format('{0}/{1}', parameters('sqlServerName'), parameters('sqlDatabaseName'))]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "Basic",
+                "tier": "Basic"
+              },
+              "properties": {
+                "collation": "SQL_Latin1_General_CP1_CI_AS",
+                "maxSizeBytes": 2147483648,
+                "zoneRedundant": false,
+                "requestedBackupStorageRedundancy": "Local"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Sql/servers', parameters('sqlServerName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Cache/redis",
+              "apiVersion": "2023-08-01",
+              "name": "[parameters('redisName')]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "sku": {
+                  "name": "[parameters('redisSkuName')]",
+                  "family": "[parameters('redisSkuFamily')]",
+                  "capacity": "[parameters('redisSkuCapacity')]"
+                },
+                "enableNonSslPort": false,
+                "minimumTlsVersion": "1.2",
+                "redisVersion": "6"
+              },
+              "tags": {
+                "environment": "[parameters('environment')]",
+                "project": "QuietWealth",
+                "role": "cache"
+              }
+            },
+            {
+              "type": "Microsoft.EventGrid/topics",
+              "apiVersion": "2022-06-15",
+              "name": "[parameters('eventGridTopicName')]",
+              "location": "[parameters('location')]",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "tags": {
+                "environment": "[parameters('environment')]",
+                "project": "QuietWealth",
+                "role": "integration"
+              }
+            },
+            {
+              "type": "Microsoft.DataFactory/factories",
+              "apiVersion": "2018-06-01",
+              "name": "[parameters('dataFactoryName')]",
+              "location": "[parameters('location')]",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "tags": {
+                "environment": "[parameters('environment')]",
+                "project": "QuietWealth",
+                "role": "integration"
+              }
+            },
+            {
+              "type": "Microsoft.NotificationHubs/namespaces",
+              "apiVersion": "2023-09-01",
+              "name": "[parameters('notificationHubNamespaceName')]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "Basic",
+                "tier": "Basic"
+              },
+              "tags": {
+                "environment": "[parameters('environment')]",
+                "project": "QuietWealth",
+                "role": "notification"
+              }
+            },
+            {
+              "type": "Microsoft.NotificationHubs/namespaces/notificationHubs",
+              "apiVersion": "2023-09-01",
+              "name": "[format('{0}/{1}', parameters('notificationHubNamespaceName'), parameters('notificationHubName'))]",
+              "location": "[parameters('location')]",
+              "dependsOn": [
+                "[resourceId('Microsoft.NotificationHubs/namespaces', parameters('notificationHubNamespaceName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.ApiManagement/service",
+              "apiVersion": "2022-08-01",
+              "name": "[parameters('apiManagementName')]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "[parameters('apiManagementSkuName')]",
+                "capacity": "[parameters('apiManagementSkuCapacity')]"
+              },
+              "properties": {
+                "publisherEmail": "[parameters('apiManagementPublisherEmail')]",
+                "publisherName": "[parameters('apiManagementPublisherName')]"
+              },
+              "tags": {
+                "environment": "[parameters('environment')]",
+                "project": "QuietWealth",
+                "role": "gateway"
+              }
+            },
+            {
+              "type": "Microsoft.Web/serverfarms",
+              "apiVersion": "2023-01-01",
+              "name": "[variables('planName')]",
+              "location": "[parameters('location')]",
+              "kind": "linux",
+              "sku": {
+                "name": "[parameters('appServicePlanSku')]"
+              },
+              "properties": {
+                "reserved": true
+              },
+              "tags": {
+                "environment": "[parameters('environment')]",
+                "project": "QuietWealth",
+                "role": "hosting"
+              }
+            },
+            {
+              "type": "Microsoft.Web/sites",
+              "apiVersion": "2023-01-01",
+              "name": "[parameters('frontendAppName')]",
+              "location": "[parameters('location')]",
+              "kind": "app,linux",
+              "properties": {
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('planName'))]",
+                "httpsOnly": true,
+                "siteConfig": {
+                  "linuxFxVersion": "[parameters('frontendRuntimeStack')]",
+                  "appCommandLine": "[parameters('frontendStartupCommand')]",
+                  "minTlsVersion": "1.2",
+                  "ftpsState": "Disabled",
+                  "http20Enabled": true,
+                  "appSettings": [
+                    {
+                      "name": "WEBSITE_NODE_DEFAULT_VERSION",
+                      "value": "[parameters('frontendNodeVersion')]"
+                    },
+                    {
+                      "name": "SCM_DO_BUILD_DURING_DEPLOYMENT",
+                      "value": "false"
+                    },
+                    {
+                      "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                      "value": "[reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString]"
+                    }
+                  ]
+                }
+              },
+              "tags": {
+                "environment": "[parameters('environment')]",
+                "project": "QuietWealth",
+                "role": "frontend"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/components', parameters('appInsightsName'))]",
+                "[resourceId('Microsoft.Web/serverfarms', variables('planName'))]"
+              ]
+            },
+            {
+              "condition": "[parameters('enableDeploymentSlots')]",
+              "type": "Microsoft.Web/sites/slots",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}', parameters('frontendAppName'), parameters('frontendSlotName'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('planName'))]",
+                "httpsOnly": true,
+                "siteConfig": {
+                  "linuxFxVersion": "[parameters('frontendRuntimeStack')]",
+                  "appCommandLine": "[parameters('frontendStartupCommand')]",
+                  "minTlsVersion": "1.2",
+                  "ftpsState": "Disabled",
+                  "http20Enabled": true,
+                  "appSettings": [
+                    {
+                      "name": "WEBSITE_NODE_DEFAULT_VERSION",
+                      "value": "[parameters('frontendNodeVersion')]"
+                    },
+                    {
+                      "name": "SCM_DO_BUILD_DURING_DEPLOYMENT",
+                      "value": "false"
+                    },
+                    {
+                      "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                      "value": "[reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString]"
+                    }
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/components', parameters('appInsightsName'))]",
+                "[resourceId('Microsoft.Web/sites', parameters('frontendAppName'))]",
+                "[resourceId('Microsoft.Web/serverfarms', variables('planName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Web/sites",
+              "apiVersion": "2023-01-01",
+              "name": "[parameters('apiAppName')]",
+              "location": "[parameters('location')]",
+              "kind": "app,linux",
+              "properties": {
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('planName'))]",
+                "httpsOnly": true,
+                "siteConfig": {
+                  "linuxFxVersion": "[parameters('apiRuntimeStack')]",
+                  "appCommandLine": "[parameters('apiStartupCommand')]",
+                  "minTlsVersion": "1.2",
+                  "ftpsState": "Disabled",
+                  "http20Enabled": true,
+                  "appSettings": [
+                    {
+                      "name": "ASPNETCORE_ENVIRONMENT",
+                      "value": "[variables('aspnetEnv')]"
+                    },
+                    {
+                      "name": "App__Port",
+                      "value": "[parameters('apiPort')]"
+                    },
+                    {
+                      "name": "ConnectionStrings__QuietWealthSql",
+                      "value": "[parameters('sqlConnectionString')]"
+                    },
+                    {
+                      "name": "BlobStorage__ConnectionString",
+                      "value": "[parameters('blobStorageConnectionString')]"
+                    },
+                    {
+                      "name": "NotificationHub__ConnectionString",
+                      "value": "[parameters('notificationHubConnectionString')]"
+                    },
+                    {
+                      "name": "Supabase__Url",
+                      "value": "[parameters('supabaseUrl')]"
+                    },
+                    {
+                      "name": "Supabase__ServiceKey",
+                      "value": "[parameters('supabaseServiceKey')]"
+                    },
+                    {
+                      "name": "Redis__Host",
+                      "value": "[reference(resourceId('Microsoft.Cache/redis', parameters('redisName')), '2023-08-01').hostName]"
+                    },
+                    {
+                      "name": "EventGrid__TopicEndpoint",
+                      "value": "[reference(resourceId('Microsoft.EventGrid/topics', parameters('eventGridTopicName')), '2022-06-15').endpoint]"
+                    },
+                    {
+                      "name": "NotificationHub__Namespace",
+                      "value": "[parameters('notificationHubNamespaceName')]"
+                    },
+                    {
+                      "name": "NotificationHub__HubName",
+                      "value": "[parameters('notificationHubName')]"
+                    },
+                    {
+                      "name": "AllowedOrigins__0",
+                      "value": "[variables('frontendOrigin')]"
+                    },
+                    {
+                      "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                      "value": "[reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString]"
+                    },
+                    {
+                      "name": "WEBSITE_RUN_FROM_PACKAGE",
+                      "value": "1"
+                    }
+                  ]
+                }
+              },
+              "tags": {
+                "environment": "[parameters('environment')]",
+                "project": "QuietWealth",
+                "role": "api"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/components', parameters('appInsightsName'))]",
+                "[resourceId('Microsoft.EventGrid/topics', parameters('eventGridTopicName'))]",
+                "[resourceId('Microsoft.Web/serverfarms', variables('planName'))]",
+                "[resourceId('Microsoft.Cache/redis', parameters('redisName'))]"
+              ]
+            },
+            {
+              "condition": "[parameters('enableDeploymentSlots')]",
+              "type": "Microsoft.Web/sites/slots",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}', parameters('apiAppName'), parameters('apiSlotName'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('planName'))]",
+                "httpsOnly": true,
+                "siteConfig": {
+                  "linuxFxVersion": "[parameters('apiRuntimeStack')]",
+                  "appCommandLine": "[parameters('apiStartupCommand')]",
+                  "minTlsVersion": "1.2",
+                  "ftpsState": "Disabled",
+                  "http20Enabled": true,
+                  "appSettings": [
+                    {
+                      "name": "ASPNETCORE_ENVIRONMENT",
+                      "value": "[variables('aspnetEnv')]"
+                    },
+                    {
+                      "name": "App__Port",
+                      "value": "[parameters('apiPort')]"
+                    },
+                    {
+                      "name": "ConnectionStrings__QuietWealthSql",
+                      "value": "[parameters('sqlConnectionString')]"
+                    },
+                    {
+                      "name": "BlobStorage__ConnectionString",
+                      "value": "[parameters('blobStorageConnectionString')]"
+                    },
+                    {
+                      "name": "NotificationHub__ConnectionString",
+                      "value": "[parameters('notificationHubConnectionString')]"
+                    },
+                    {
+                      "name": "Supabase__Url",
+                      "value": "[parameters('supabaseUrl')]"
+                    },
+                    {
+                      "name": "Supabase__ServiceKey",
+                      "value": "[parameters('supabaseServiceKey')]"
+                    },
+                    {
+                      "name": "AllowedOrigins__0",
+                      "value": "[variables('frontendOrigin')]"
+                    },
+                    {
+                      "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                      "value": "[reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString]"
+                    },
+                    {
+                      "name": "WEBSITE_RUN_FROM_PACKAGE",
+                      "value": "1"
+                    }
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/sites', parameters('apiAppName'))]",
+                "[resourceId('Microsoft.Insights/components', parameters('appInsightsName'))]",
+                "[resourceId('Microsoft.Web/serverfarms', variables('planName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Web/sites",
+              "apiVersion": "2023-01-01",
+              "name": "[parameters('functionAppName')]",
+              "location": "[parameters('location')]",
+              "kind": "functionapp,linux",
+              "properties": {
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('planName'))]",
+                "httpsOnly": true,
+                "siteConfig": {
+                  "linuxFxVersion": "[parameters('functionRuntimeStack')]",
+                  "minTlsVersion": "1.2",
+                  "ftpsState": "Disabled",
+                  "http20Enabled": true,
+                  "appSettings": [
+                    {
+                      "name": "AzureWebJobsStorage",
+                      "value": "[format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix=core.windows.net', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-05-01').keys[0].value)]"
+                    },
+                    {
+                      "name": "FUNCTIONS_EXTENSION_VERSION",
+                      "value": "~4"
+                    },
+                    {
+                      "name": "FUNCTIONS_WORKER_RUNTIME",
+                      "value": "[parameters('functionWorkerRuntime')]"
+                    },
+                    {
+                      "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                      "value": "[reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString]"
+                    }
+                  ]
+                }
+              },
+              "tags": {
+                "environment": "[parameters('environment')]",
+                "project": "QuietWealth",
+                "role": "functions"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/components', parameters('appInsightsName'))]",
+                "[resourceId('Microsoft.Web/serverfarms', variables('planName'))]",
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "frontendUrl": {
+              "type": "string",
+              "value": "[format('https://{0}', reference(resourceId('Microsoft.Web/sites', parameters('frontendAppName')), '2023-01-01').defaultHostName)]"
+            },
+            "frontendSlotUrl": {
+              "type": "string",
+              "value": "[if(parameters('enableDeploymentSlots'), format('https://{0}-{1}.azurewebsites.net', parameters('frontendAppName'), parameters('frontendSlotName')), '')]"
+            },
+            "apiUrl": {
+              "type": "string",
+              "value": "[format('https://{0}', reference(resourceId('Microsoft.Web/sites', parameters('apiAppName')), '2023-01-01').defaultHostName)]"
+            },
+            "apiSlotUrl": {
+              "type": "string",
+              "value": "[if(parameters('enableDeploymentSlots'), format('https://{0}-{1}.azurewebsites.net', parameters('apiAppName'), parameters('apiSlotName')), '')]"
+            },
+            "sqlServerFqdn": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Sql/servers', parameters('sqlServerName')), '2022-05-01-preview').fullyQualifiedDomainName]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', parameters('resourceGroupName'))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "frontendUrl": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', format('quietwealth-platform-{0}', parameters('environment'))), '2025-04-01').outputs.frontendUrl.value]"
+    },
+    "frontendSlotUrl": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', format('quietwealth-platform-{0}', parameters('environment'))), '2025-04-01').outputs.frontendSlotUrl.value]"
+    },
+    "apiUrl": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', format('quietwealth-platform-{0}', parameters('environment'))), '2025-04-01').outputs.apiUrl.value]"
+    },
+    "apiSlotUrl": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', format('quietwealth-platform-{0}', parameters('environment'))), '2025-04-01').outputs.apiSlotUrl.value]"
+    },
+    "sqlServerFqdn": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', format('quietwealth-platform-{0}', parameters('environment'))), '2025-04-01').outputs.sqlServerFqdn.value]"
+    }
+  }
+}
