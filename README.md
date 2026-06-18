@@ -1,41 +1,220 @@
-# QuietWealth
+# QuietWealth — Frontend Design
 
-SMEs face slow, bureaucratic processes to certify their financial health, delaying capital access. QuietWealth solves this by integrating document validation, risk analysis, and standardized financial conditions into a single certified report — creating a low-risk investment ecosystem anchored in real revenue streams.
+## Problem statement
 
----
+SMEs spend weeks proving their financial health before they can raise capital. The paperwork is slow, the criteria are inconsistent, and investors have no quick way to tell a healthy company from a risky one. QuietWealth shortens that loop: SMEs upload their financials, financial analysts certify them, and investors browse a marketplace of companies whose numbers have already been checked. Every certified profile is backed by a trust record built from validated documents and standardized financial conditions.
 
-# 1. Frontend
+## Scope
 
-## 1.1 Technology Stack
+This document describes the **frontend** of QuietWealth: the Next.js application, its architecture, the way its code is organized, and the design decisions behind each part.
 
-| Technology | Version | Justification |
-|---|---|---|
-| **Application Type** | SSR Web App | Auth-gated pages render server-side, preventing flash of unauthorized content for sensitive financial data |
-| **React.js** | `19.2` | `Suspense` and `React.lazy` are essential for document upload and long-running compilation flows |
-| **Next.js** | `15` | SSR, file-system routing, and image optimization out of the box; integrates natively with Azure App Service Node.js runtime |
-| **Node.js** | `22` | LTS; required by Next.js 15 SSR runtime on Azure App Service |
-| **TypeScript** | `5.9.3` | Catches API-to-UI contract mismatches at compile time — critical in a data-intensive financial domain |
-| **TailwindCSS** | `4.1` | JIT compiler eliminates dead CSS; utility classes map directly to design tokens |
-| **Redux Toolkit** | `2.8` | Tracks async document processing status across page navigations; DevTools provide observability of state transitions |
-| **Zod** | `4.3.6` | Runtime schema validation on all API responses and form inputs; catches backend contract drift before data reaches Redux |
-| **Axios** | `1.9` | Interceptors attach Bearer tokens and handle 401 refresh centrally; cleaner multipart upload API than native `fetch` |
-| **Auth0 React SDK** | `2.2` | Manages OAuth 2.0 Authorization Code + PKCE and silent token refresh; Microsoft Entra ID is federated through Auth0 |
-| **Jest** | `30.2.0` | Unit testing with TypeScript support via `ts-jest`; coverage thresholds enforced in CI |
-| **Playwright** | `1.52` | Cross-browser E2E testing (Chromium, Firefox) with native `msw` integration for backend mocking |
-| **Prettier** | `3.8.1` | Uniform formatting; runs via Husky pre-commit hooks to block non-conforming commits |
-| **ESLint** | `10.0.2` | Custom rules ban `dangerouslySetInnerHTML`, token storage in `localStorage`, and direct `console.log` calls |
-| **Husky** | `9.1.7` | Runs `lint-staged` on pre-commit; blocks commits that fail ESLint, Prettier, or TypeScript checks |
-| **Cloud Service** | Azure | Consistent with backend infrastructure; reduces operational complexity and cross-cloud latency |
-| **Azure App Service** | — | Native Node.js SSR runtime; deployment slots enable zero-downtime releases with instant rollback |
-| **Code Repository** | GitHub | Enables OIDC-based GitHub Actions → Azure deployment without long-lived credentials |
-| **CI/CD** | GitHub Actions | OIDC token exchange with Azure App Service; branch-based environment promotion with manual approval for production |
-| **Azure Application Insights SDK** | — | Unified telemetry; correlates traces across browser, SSR layer, and backend API using a shared `correlationId` |
+The backend API is a separate service with its own design. It appears here only as an external container in the C4 diagrams and as the API contract the frontend consumes (Section 7). Backend internals are not part of this document. Everything under `app/` is the frontend; anything under `server/` belongs to the backend design.
+
+| Section | Contents |
+|---|---|
+| 1 | Architecture (C4) |
+| 2 | Layered design |
+| 3 | Technology stack |
+| 4 | UX/UI |
+| 5 | Component design |
+| 6 | State management |
+| 7 | API contract and runtime validation |
+| 8 | Asynchronous communication and polling |
+| 9 | Security |
+| 10 | Observability |
+| 11 | Testing |
+| 12 | CI/CD and environments |
+| 13 | Source code structure |
+| 14 | Design patterns |
 
 ---
 
-## 1.2 UX/UI
+# 1. Architecture (C4)
 
-### 1.2.1 Core Business Flows
+The diagrams zoom in progressively: the system in its environment (Level 1), the deployable containers (Level 2), and the internals of the frontend container only (Level 3). The backend container's internals are documented separately.
+
+## 1.1 Level 1 — System context
+
+Three day-to-day actors and a system administrator interact with QuietWealth. Identity is delegated to Auth0, which federates exclusively with Microsoft Entra ID, so every user signs in with a corporate Microsoft account. Telemetry flows to Azure Application Insights.
+
+```mermaid
+C4Context
+title QuietWealth — System Context
+
+Person(smeOwner, "SME Owner", "Uploads financial documents and tracks certification status")
+Person(analyst, "Financial Analyst", "Reviews applications and issues certification decisions")
+Person(investor, "Investor", "Browses certified SMEs and views investment detail")
+Person(admin, "System Administrator", "Manages users, roles, configuration, and audit visibility")
+
+System(qw, "QuietWealth", "Financial trust record and certified SME investment marketplace")
+
+System_Ext(auth0, "Auth0", "Identity broker, OAuth 2.0 Authorization Code + PKCE")
+System_Ext(entra, "Microsoft Entra ID", "Corporate identity provider")
+System_Ext(appins, "Azure Application Insights", "Logs, metrics, traces, alerts")
+
+Rel(smeOwner, qw, "Uploads documents, tracks status", "HTTPS")
+Rel(analyst, qw, "Reviews and certifies applications", "HTTPS")
+Rel(investor, qw, "Browses marketplace and detail", "HTTPS")
+Rel(admin, qw, "Manages users and configuration", "HTTPS")
+
+Rel(qw, auth0, "Authenticates users through", "OIDC / OAuth 2.0 PKCE")
+Rel(auth0, entra, "Federates authentication to", "OIDC")
+Rel(qw, appins, "Sends telemetry to", "App Insights SDK")
+```
+
+## 1.2 Level 2 — Containers
+
+QuietWealth runs as four containers: the frontend web app, the backend API, the database, and document storage. Each is shown with its technology and the external systems it depends on.
+
+This is the only level where the whole system appears. From Level 3 onward the diagrams expand the **Frontend Web App** container; the Backend API container is expanded in the backend design.
+
+```mermaid
+C4Container
+title QuietWealth — Containers
+
+Person(user, "Platform User", "Investor, SME Owner, Financial Analyst, or Administrator")
+
+System_Boundary(qw, "QuietWealth") {
+  Container(frontend, "Frontend Web App", "Next.js 15, React 19, Node.js 22 on Azure App Service", "Server-rendered UI. Subject of this document.")
+  Container(api, "Backend API", ".NET on Azure App Service", "Business logic, certification workflow, authorization, persistence. Documented separately.")
+  ContainerDb(db, "Application Database", "Azure SQL", "Users, SME profiles, applications, certifications, investments")
+  Container(blob, "Document Storage", "Azure Blob Storage", "Uploaded financial documents")
+}
+
+System_Ext(auth0, "Auth0", "Identity broker")
+System_Ext(entra, "Microsoft Entra ID", "Corporate IdP")
+System_Ext(keyvault, "Azure Key Vault", "Secrets and configuration")
+System_Ext(appins, "Azure Application Insights", "Observability")
+System_Ext(actions, "GitHub Actions", "CI/CD")
+
+Rel(user, frontend, "Uses", "HTTPS")
+Rel(frontend, auth0, "Starts login/logout", "OIDC / OAuth 2.0 PKCE")
+Rel(auth0, entra, "Federates authentication", "OIDC")
+Rel(frontend, api, "Consumes protected REST endpoints", "HTTPS + Bearer JWT")
+Rel(frontend, appins, "Sends frontend telemetry", "App Insights SDK")
+Rel(api, db, "Reads and writes", "SQL/TLS")
+Rel(api, blob, "Stores and retrieves documents", "HTTPS SDK")
+Rel(api, keyvault, "Reads secrets", "Managed Identity")
+Rel(api, appins, "Sends backend telemetry", "App Insights SDK")
+Rel(actions, frontend, "Deploys build artifact", "OIDC")
+Rel(actions, api, "Deploys build artifact", "OIDC")
+```
+
+## 1.3 Level 3 — Frontend components
+
+This expands the Frontend Web App container. Each box is a group of code inside `app/`, and the boxes correspond one-to-one with the layers in Section 2.
+
+```mermaid
+C4Component
+title QuietWealth — Frontend Components (inside the Frontend Web App container)
+
+Container_Boundary(frontend, "Frontend Web App — Next.js SSR") {
+  Component(pages, "Pages & Layouts", "Next.js App Router", "Route entry points and layout composition")
+  Component(ui, "UI Components", "React (Atomic Design)", "Atoms, molecules, organisms, templates")
+  Component(hooks, "Feature Hooks", "TypeScript", "Orchestrate use cases; connect UI to services and state")
+  Component(state, "Redux Store", "Redux Toolkit", "Shared state: auth, marketplace, certification, validation")
+  Component(services, "Application Services", "TypeScript + Axios", "API calls through one HTTP facade")
+  Component(domain, "Domain", "TypeScript + Zod", "DTOs, schemas, roles, permissions, access policies")
+  Component(auth, "Auth Layer", "Auth0 SDK", "AuthFacade, AuthMiddleware, guards, adapters")
+  Component(polling, "Polling Layer", "TypeScript", "Certification status polling and strategies")
+  Component(infra, "Infrastructure", "Logger, ErrorHandler, Settings, i18n", "Cross-cutting utilities and providers")
+}
+
+System_Ext(auth0, "Auth0", "OIDC provider")
+System_Ext(api, "Backend API", "Protected REST API")
+System_Ext(appins, "Application Insights", "Telemetry")
+
+Rel(pages, ui, "Compose")
+Rel(ui, hooks, "Call")
+Rel(hooks, state, "Read and dispatch")
+Rel(hooks, services, "Invoke")
+Rel(hooks, domain, "Validate and authorize with")
+Rel(services, domain, "Parse responses with Zod schemas")
+Rel(services, auth, "Get bearer token from")
+Rel(services, api, "Call", "HTTPS REST")
+Rel(auth, auth0, "Authenticate with")
+Rel(polling, services, "Fetch certification status through")
+Rel(services, infra, "Log and handle errors with")
+Rel(auth, infra, "Log auth events with")
+Rel(infra, appins, "Send telemetry to")
+```
+
+---
+
+# 2. Layered design
+
+C4 describes how the system is structured. The layered design describes a different relationship: which code is allowed to depend on which. Both views describe the same frontend, so the boxes in §1.3 map onto the layers below.
+
+The frontend has five layers. Dependencies point downward only — a layer uses the one beneath it and never the one above.
+
+| Layer | Responsibility | Location | Dependency constraint |
+|---|---|---|---|
+| Presentation | Render UI and capture user input | `app/components/**`, `app/**/page.tsx` | Calls hooks. Does not import services, Axios, Auth0, or Redux slices. |
+| Application | Orchestrate a use case end to end | `app/components/hooks/**` | Validates input, calls services, dispatches Redux actions. |
+| Domain | Business types and rules | `app/models/**`, `app/validation/**`, `app/auth/policies/**` | Pure TypeScript. No React or infrastructure clients. |
+| Services | Talk to the backend and Auth0 | `app/services/**`, `app/auth/AuthFacade.ts` | Owns all network I/O. Renders no UI. |
+| Infrastructure | Cross-cutting plumbing | `app/state/**`, `app/utils/**`, `app/settings/**`, `app/components/i18n/**` | Provides logger, store, settings, i18n. No feature logic. |
+
+```mermaid
+flowchart TD
+  P["Presentation<br/>pages + components"]
+  A["Application<br/>feature hooks"]
+  D["Domain<br/>models + Zod + policies"]
+  S["Services<br/>HTTP facade + AuthFacade + API services"]
+  I["Infrastructure<br/>Redux + Logger + Settings + i18n"]
+
+  P --> A
+  A --> D
+  A --> S
+  A --> I
+  S --> D
+  S --> I
+```
+
+The login flow crosses four layers in order:
+
+1. `LoginPage` (Presentation) calls `useAuth().login()`.
+2. `useAuth` (Application) delegates to `AuthFacade`.
+3. `AuthFacade` (Services) runs the Auth0 PKCE flow, then passes raw claims to `MicrosoftProfileAdapter` (Domain), which produces a `UserSessionDTO`.
+4. `SessionManager` (Infrastructure) stores the session and Redux reflects the authenticated state.
+
+No component reaches a service directly. `LoginPage` importing `AuthFacade` would break the layering.
+
+---
+
+# 3. Technology stack
+
+The version column is the baseline the project targets. Major-version upgrades are made deliberately, not incidentally.
+
+| Technology | Version | Role | Usage in the codebase |
+|---|---|---|---|
+| Next.js | 15 | SSR + App Router. Auth-gated pages render server-side, so unauthorized content never flashes. | Route entries in `app/**/page.tsx`; business UI in `app/components/pages/`. |
+| React | 19.2 | UI library | Atomic Design with typed props. |
+| Node.js | 22 (LTS) | SSR runtime on Azure App Service | Matches the version run by CI and App Service. |
+| TypeScript | 5.9.3 | Static typing | `any` is avoided except where justified. |
+| TailwindCSS | 4.1 | Utility-first styling mapped to tokens | Styling reads token CSS variables, not hardcoded hex. |
+| Redux Toolkit | 2.8 | Shared state and async thunks | Accessed through typed hooks in `app/state/hooks.ts`. |
+| Zod | 4.3.6 | Runtime validation | Parses every API response in the service layer before Redux. |
+| Axios | 1.9 | HTTP client with interceptors | Used only through `HttpClientFacade`. |
+| Auth0 React SDK | 2.2 | OAuth 2.0 Authorization Code + PKCE, silent refresh | Accessed only through `AuthFacade`. |
+| Jest | 30.2.0 | Unit tests | Covers auth, services, validation, polling. |
+| Playwright | 1.52 | E2E across Chromium and Firefox | Drives flows through Page Object Models and `data-testid`. |
+| ESLint | 10.0.2 | Static analysis with custom bans | Enforced in CI and on pre-commit. |
+| Prettier | 3.8.1 | Formatting | Runs on pre-commit. |
+| Husky | 9.1.7 | Pre-commit hooks | Runs lint, format, and typecheck. |
+| Azure App Service | — | Frontend hosting | Hosts the pre-built `.next/` artifact deployed from CI. |
+| Azure Application Insights | — | Observability | Receives frontend telemetry. |
+| GitHub Actions | — | CI/CD | Authenticates to Azure via OIDC; no stored credentials. |
+
+ESLint carries three project-specific bans, each tied to a concrete risk rather than to style: no `dangerouslySetInnerHTML` (XSS), no token-shaped keys written to `localStorage`/`sessionStorage` (token theft), and no `console.log` (output goes through the structured, redacting `Logger`).
+
+---
+
+---
+
+## 4. UX/UI
+
+### 4.2 Core Business Flows
 
 #### Login
 1. User opens QuietWealth and reaches the authentication screen.
@@ -79,7 +258,7 @@ SMEs face slow, bureaucratic processes to certify their financial health, delayi
 
 ---
 
-### 1.2.2 Wireframes
+### 4.3 Wireframes
 
 #### Login
 Microsoft-authenticated entry point.
@@ -110,7 +289,7 @@ Shows verified SME financials, growth charts, and expert certifications.
 
 ---
 
-### 1.2.3 Usability Testing
+### 4.4  Usability Testing
 
 Tests were conducted remotely using Maze, targeting the **Investment Detail Screen** — the most data-dense view.
 
@@ -146,417 +325,262 @@ Tests were conducted remotely using Maze, targeting the **Investment Detail Scre
 
 ---
 
-## 1.3 Component Design
+# 5. Component design
 
-### 1.3.1 Strategy
-The frontend uses **Atomic Design** for component architecture.
+## 5.1 Atomic Design
 
-### 1.3.2 File Structure
+Components are organized by size and responsibility. A component depends only on the categories to its left.
 
-```
-app/
- └─ components/
-     ├─ atoms/
-     ├─ molecules/
-     ├─ organisms/
-     ├─ templates/
-     ├─ pages/
-     ├─ hooks/
-     ├─ i18n/
-     └─ styles/
-```
+| Category | Folder | Definition | Depends on |
+|---|---|---|---|
+| Atoms | `app/components/atoms/` | Pure UI, no business logic | Props and design tokens only |
+| Molecules | `app/components/molecules/` | Small compositions of atoms | Atoms, local UI state |
+| Organisms | `app/components/organisms/` | Whole screen sections | Atoms, molecules, hooks |
+| Templates | `app/components/templates/` | Layout shells | Organisms, layout providers |
+| Pages | `app/components/pages/` | Business screens | Hooks, templates, organisms |
 
-### 1.3.3 Component Levels
-
-#### [Atoms](app/components/atoms)
-Pure UI — no API calls, no business logic. Accept props only. Must support design tokens.
-
-```
-Button · Input · Badge · Spinner · ProgressBar
-TrustIndicator · Label · Card · Toast · Modal · StatCard
-```
+Components observe a fixed set of constraints: they perform no `fetch`/`axios`/service calls (they go through a hook), they never access Auth0 directly (it is reached through `AuthFacade` via a hook), they never check roles such as `user.role === "financial_analyst"` (they use `hasAccess("canCertifySME")`), they contain no literal display strings (i18n keys instead), and they never interpolate a raw sensitive financial value into JSX (rendered through `MaskedValue`, §9.3). New components extend existing atoms or molecules through props and variants rather than duplicating them.
 
 ```tsx
-<Button variant="primary" size="md" loading>
-  Submit Documents
-</Button>
+// SMECard composes existing atoms and molecules; it holds no business logic.
+<article data-testid="sme-card">
+  <TrustIndicator level={sme.certificationStatus} />
+  <StatCard label={t("sme.growth")} value={formatPercent(sme.growthRate)} />
+  <Button variant="primary" size="md" onClick={onViewDetails}>
+    {t("marketplace.viewDetails")}
+  </Button>
+</article>
 ```
 
-#### [Molecules](app/components/molecules)
-Composed from atoms. Handle UI logic only — no direct API calls.
-
-```
-DocumentUploader · FormField · StatusBadge · InfoBanner · SMECard · FilterBar
-```
-
-```
-SMECard
- ├─ TrustIndicator (certification status)
- ├─ StatCard (growth %, capital raised)
- └─ Button ("Ver Detalles")
-```
-
-#### [Organisms](app/components/organisms)
-Larger layout sections. Composition only — no business logic.
-
-```
-MarketplaceGrid · InvestmentDetailPanel · ValidationQueue
-DocumentUploadZone · Navbar · Sidebar · PageContainer
-```
-
-#### [Pages](app/components/pages)
-Feature-specific components tied to a business process. Coordinate logic through hooks. Mounted by Next.js App Router.
-
-```
-LoginPage.tsx
-MarketplacePage.tsx
-DocumentUploadPage.tsx
-ExpertValidationPage.tsx
-InvestmentDetailPage.tsx
-```
-
-### 1.3.4 Reuse Rule
-Before creating a component, check [atoms](app/components/atoms) and [molecules](app/components/molecules). If a similar one exists, extend it via props, variants, or composition — never duplicate.
-
-```tsx
-<TrustIndicator level="certified" />
-<TrustIndicator level="pending" />
-<TrustIndicator level="rejected" />
-```
-
-### 1.3.5 Hooks
-All business logic lives in hooks. Hooks interact with services and state. Components never call services directly.
-
-```
-useAuth()               useMarketplace()         useDocumentUpload()
-useExpertValidation()   useInvestmentDetail()     usePermissions()
-usePolicies()           useSession()              useApplicationServices()
-```
-
-### 1.3.6 Naming Conventions
+## 5.2 Naming conventions
 
 | Element | Convention | Example |
 |---|---|---|
-| Component files | `PascalCase` | `SMECard.tsx` |
-| Component folders | `PascalCase` | `SMECard/` |
-| Page files | `PascalCase` + `Page` suffix | `MarketplacePage.tsx` |
-| Hook files | `camelCase` + `use` prefix | `useMarketplace.ts` |
-| Service files | `PascalCase` + `Service` suffix | `TrustRecordService.ts` |
-| Redux slices | `camelCase` + `Slice` suffix | `marketplaceSlice.ts` |
-| Zod schemas | `camelCase` + `Schema` suffix | `documentUploadSchema.ts` |
-| Type/interface files | `PascalCase` or `camelCase.types.ts` | `session.types.ts` |
-| CSS module files | `camelCase.module.css` matching component | `smeCard.module.css` |
-| Tailwind utilities | Token-based CSS vars only | `text-[var(--qw-navy)]` |
-| Constants | `SCREAMING_SNAKE_CASE` | `MAX_UPLOAD_FILE_SIZE_MB` |
-| DTOs | `PascalCase` + `DTO` suffix | `TrustRecordApplicationDTO` |
-| Enums | `PascalCase` values | `CertificationStatus.PENDING` |
-| Test files | Mirror source path + `.test.ts(x)` or `.spec.ts` | `AuthFacade.test.ts` |
-| i18n keys | `dot.separated.camelCase` | `marketplace.filter.sector` |
-| Non-component folders | `kebab-case` | `app/auth/` · `investment-detail/` |
+| Component files & folders | PascalCase | `SMECard.tsx`, `SMECard/` |
+| Page components | PascalCase + `Page` | `MarketplacePage.tsx` |
+| Hooks | camelCase, `use` prefix | `useMarketplace.ts` |
+| Services | PascalCase + `Service` | `TrustRecordService.ts` |
+| Redux slices | camelCase + `Slice` | `marketplaceSlice.ts` |
+| Zod schemas | camelCase + `Schema` | `documentUploadSchema.ts` |
+| Constants | SCREAMING_SNAKE_CASE | `MAX_UPLOAD_FILE_SIZE_MB` |
+| DTOs | PascalCase + `DTO` | `UserSessionDTO` |
+| Test files | source name + `.test.ts(x)` / `.spec.ts` | `AuthFacade.test.ts` |
+| i18n keys | dot-separated camelCase | `marketplace.filter.sector` |
+| Non-component folders | kebab-case | `investment-detail/` |
 
-### 1.3.7 Design Tokens
+## 5.3 Design tokens
 
-All visual styles are defined in [tokens.ts](app/components/styles/tokens.ts):
+Visual values are centralized in `app/components/styles/`, so a brand change is one edit rather than a search-and-replace.
+
+| File | Contents |
+|---|---|
+| `tokens.ts` | Colors, spacing, radius, typography |
+| `theme.ts` | The theme object composed from tokens |
+| `breakpoints.ts` | `mobile: 480`, `tablet: 768`, `desktop: 1200` |
+| `globals.css` | CSS variables and Tailwind base |
 
 ```ts
+// app/components/styles/tokens.ts
 export const colors = {
-  primary:    "#0D1F3C",   // QW Navy — headings, navbar
-  accent:     "#1AACA8",   // QW Teal — CTA buttons, active states
-  gold:       "#C8972B",   // QW Gold — trust scores, certified badges
-  background: "#F5F7FA",   // Off-white page background
-  surface:    "#FFFFFF",   // Cards and modals
-  slate:      "#4A5568",   // Body text, secondary labels
-  success:    "#22C55E",   // Certified, low-risk
-  warning:    "#F59E0B",   // Pending review, medium-risk
-  error:      "#EF4444",   // Rejected, high-risk, validation errors
-};
-
-export const spacing = { sm: "8px", md: "16px", lg: "24px", xl: "48px" };
-export const radius  = { sm: "4px", md: "8px",  lg: "12px" };
-```
-
-Theme in [theme.ts](app/components/styles/theme.ts):
-
-```ts
-export const theme = {
-  colors,
-  spacing,
-  radius,
-  typography: {
-    fontFamily:  "Inter, sans-serif",
-    monoFamily:  "JetBrains Mono, monospace",  // financial metrics and numbers
-    headingWeight: 600,
-  },
+  primary:    "#0D1F3C", // navy — headings, navbar
+  accent:     "#1AACA8", // teal — CTAs, active states
+  gold:       "#C8972B", // gold — certified badges, trust scores
+  background: "#F5F7FA",
+  surface:    "#FFFFFF",
+  success:    "#22C55E", // certified / low risk
+  warning:    "#F59E0B", // pending / medium risk
+  error:      "#EF4444", // rejected / high risk
 };
 ```
 
-**Typography tokens:**
-
-| Token | Value | Usage |
-|---|---|---|
-| `--font-display` | `Inter, sans-serif` | Headings H1–H3 |
-| `--font-body` | `Inter, sans-serif` | Body text, labels, tables |
-| `--font-mono` | `JetBrains Mono, monospace` | Financial metrics, percentages, amounts |
-| Base size | `16px` | Root `rem` reference |
-
-**Styling rule — always use CSS variables, never hardcoded hex values:**
+Components read tokens through CSS variables:
 
 ```tsx
-// Correct
-<Button className="bg-[var(--color-primary)] text-[var(--color-primary-foreground)]" />
+<Button className="bg-[var(--color-primary)] text-[var(--color-surface)]" />
+```
 
-// Wrong
+Hardcoded values bypass theming and are not used:
+
+```tsx
 <Button style={{ background: "#0D1F3C" }} />
 ```
 
-**Logos:** SVG only. Two variants in [app/assets/logo/](app/assets/logo/): `logo-dark.svg` (white text, for dark navbar) and `logo-light.svg` (navy text, for light surfaces). Minimum width: `120px`. No rasterized PNGs.
+Certification status is communicated with both a color and a text label, never color alone, for accessibility: certified uses gold with a check, pending uses warning with a clock, rejected uses error with an X.
 
-**Icons:** Lucide React (`lucide-react@0.383.0`). Named imports only — required for tree-shaking. No icon fonts.
-
-**Spacing:** 4-point Tailwind scale. Card padding: `p-4` (16px). Input padding: `p-2` (8px). Grid gaps: `gap-6` (24px). Page horizontal padding: `px-6 md:px-12 lg:px-24`.
-
-**Trust status** must always be communicated with both color **and** a text label — never color alone (accessibility requirement):
-- Certified → `--qw-gold` + checkmark icon
-- Pending → `--qw-warning` + clock icon
-- Rejected → `--qw-error` + X icon
-
-### 1.3.8 Responsive Design
-
-Breakpoints in [breakpoints.ts](app/components/styles/breakpoints.ts):
-
-```ts
-export const breakpoints = { mobile: 480, tablet: 768, desktop: 1200 };
-```
+## 5.4 Responsive layout
 
 | Device | Marketplace | Investment Detail | Navigation |
 |---|---|---|---|
-| Mobile | Single-column stacked cards | Single column | Hamburger menu |
-| Tablet | 2-column card grid | Side-by-side metrics + charts | Collapsed sidebar |
-| Desktop | 3-column card grid | Full dual-panel | Full sidebar |
+| Mobile | Single column | Single column | Hamburger menu |
+| Tablet | 2-column grid | Metrics beside charts | Collapsed sidebar |
+| Desktop | 3-column grid | Full dual panel | Full sidebar |
 
-Use `flex`/`grid` layouts. Avoid fixed widths. Use Tailwind responsive prefixes: `sm:`, `md:`, `lg:`.
+Layout uses `flex`/`grid` and Tailwind responsive prefixes (`sm:`, `md:`, `lg:`), with no fixed pixel widths for structural layout.
 
-### 1.3.9 Internationalization
+## 5.5 Internationalization
 
-All display text must be externalized. Literal strings in components are blocked by ESLint.
+Every display string is externalized to `en.json` and `es.json`; a literal string in JSX fails linting.
 
 ```tsx
-// Wrong
-<h1>Marketplace</h1>
-
-// Correct
 const { t } = useTranslation();
-<h1>{t("marketplace.title")}</h1>
+<h1>{t("marketplace.title")}</h1>   // externalized
+<h1>Marketplace</h1>                // rejected by i18n/no-literal-string
 ```
 
-Translation files: [en.json](app/components/i18n/en.json) · [es.json](app/components/i18n/es.json)
+## 5.6 Performance
 
-### 1.3.10 Performance Rules
-
-```tsx
-// Lazy-load feature pages
-const MarketplacePage      = lazy(() => import("@/components/pages/MarketplacePage"));
-const InvestmentDetailPage = lazy(() => import("@/components/pages/InvestmentDetailPage"));
-
-export function AppRoutes() {
-  return (
-    <Suspense fallback={<Spinner />}>
-      <MarketplacePage />
-    </Suspense>
-  );
-}
-
-// Memoize heavy list items
-export const SMECard = memo(function SMECard({ sme }: SMECardProps) {
-  const formattedGrowth = useMemo(() => formatPercent(sme.growthRate), [sme.growthRate]);
-  const onViewDetails   = useCallback(() => router.push(`/marketplace/${sme.id}`), [sme.id]);
-  return <article onClick={onViewDetails}>...</article>;
-});
-```
-
-- Use `React.memo` for list items rendered at scale.
-- Use `lazy()` for all feature page modules.
-- Use `useMemo` / `useCallback` to avoid unnecessary re-renders in heavy components.
+Route-level code splitting is automatic with the App Router, and heavy feature pages are additionally loaded with `lazy()` behind a `<Suspense fallback={<Spinner />}>`. Display-heavy components such as `SMECard` are memoized, and derived values and handlers use `useMemo`/`useCallback`. The marketplace grid and validation queue use `react-window` virtualization beyond 100 rows. CI fails the build when any bundle chunk exceeds 250 KB, and `lucide-react` is imported as named exports only.
 
 ---
 
-## 1.4 Security
+# 6. State management
 
-### 1.4.1 Stack
+State is split in two: shared state in Redux Toolkit, and local UI state in `useState`/`useReducer`. The dividing line is reuse — a value needed by more than one component lives in Redux; everything else stays local.
 
-- Auth0 React SDK `2.2` — OAuth 2.0 Authorization Code + PKCE, Microsoft Entra ID federation
-- JWT bearer tokens for protected API requests
-- Zod for client-side form and API response validation
-- Axios interceptors for centralized token attachment and 401 handling
-
-### 1.4.2 Authentication
-
-QuietWealth delegates authentication to **Auth0** federating exclusively with **Microsoft Entra ID**. All users are expected to have corporate Microsoft accounts.
-
-**Auth flow:**
-1. User selects **Continue with Microsoft**.
-2. Frontend redirects to Auth0 Universal Login.
-3. Auth0 federates with Microsoft Entra ID.
-4. Microsoft returns an authorization code to Auth0.
-5. Auth0 forwards the code to `AUTH0_CALLBACK_URL`.
-6. Backend validates the JWT; session is created.
-
-**Identity providers:**
-
-| Provider | Supported | Reason |
+| Redux slice | File | Contents |
 |---|---|---|
-| Microsoft Entra ID | Yes | OAuth 2.0 Authorization Code + PKCE via Auth0 |
-| Google | No | Out of scope — platform targets corporate SME/investor accounts |
+| `auth` | `app/state/slices/authSlice.ts` | `isAuthenticated`, `user`, `role`, in-memory `accessToken` |
+| `marketplace` | `app/state/slices/marketplaceSlice.ts` | SME listings, active filters, search query |
+| `certification` | `app/state/slices/certificationSlice.ts` | `applicationId`, status, current stage |
+| `validation` | `app/state/slices/validationSlice.ts` | Pending queue, selected request |
 
-**Auth0 configuration parameters:**
+Local-only state covers controlled form inputs, modal and dropdown open state, a single button's spinner, and transient errors that do not survive navigation.
 
-| Parameter | Storage |
-|---|---|
-| `AUTH0_DOMAIN` | Azure Key Vault (prod/QA) · `.env.local` (local) |
-| `AUTH0_CLIENT_ID` | Azure Key Vault (prod/QA) · `.env.local` (local) |
-| `AUTH0_CLIENT_SECRET` | Azure Key Vault (prod/QA) · `.env.local` (local) — backend only |
-| `AUTH0_CALLBACK_URL` | Azure Key Vault (prod/QA) · `.env.local` (local) |
-| `AUTH0_AUDIENCE` | Azure Key Vault (prod/QA) · `.env.local` (local) |
-
-**MFA:** Managed by Auth0 Adaptive MFA. Supported factors: Authenticator app (TOTP), SMS OTP, Email OTP. Enforced for all roles.
-
-**AuthFacade** — the only entry point for all auth operations ([app/auth/AuthFacade.ts](app/auth/AuthFacade.ts)):
+State is read and written through one consistent path. Reads use the typed selector hook; writes go through slice reducers or thunks; async operations are modeled as thunks whose lifecycle maps to loading/succeeded/failed.
 
 ```ts
-export class AuthFacade {
-  private static instance: AuthFacade | null = null;
-  static getInstance(): AuthFacade { ... }
-  private constructor() {}
+// Reads use the typed hooks, not useSelector/useDispatch directly.
+import { useAppSelector, useAppDispatch } from "@/state/hooks";
 
-  async login(): Promise<void>         { /* redirects to Auth0 → Microsoft */ }
-  async logout(): Promise<void>        { /* clears local session and Auth0 session */ }
-  async getAccessToken(): Promise<string> { /* getAccessTokenSilently() with auto-refresh */ }
-  getSession(): UserSessionDTO | null  { /* returns current in-memory session */ }
-}
-export const authFacade = AuthFacade.getInstance();
+const smes = useAppSelector((s) => s.marketplace.smes);
+const dispatch = useAppDispatch();
 ```
 
-**MicrosoftProfileAdapter** normalizes Entra ID claims into `UserSessionDTO` ([app/auth/adapters/MicrosoftProfileAdapter.ts](app/auth/adapters/MicrosoftProfileAdapter.ts)):
-
 ```ts
-export class MicrosoftProfileAdapter {
-  adapt(rawClaims: MicrosoftClaims): UserSessionDTO {
-    return {
-      userId:      rawClaims.oid,
-      email:       rawClaims.preferred_username,
-      displayName: rawClaims.name,
-      role:        this.resolveRole(rawClaims),
-      accessToken: rawClaims.access_token,
-      expiresAt:   rawClaims.exp,
-    };
+// Async work is a thunk; the slice maps its lifecycle to UI state.
+export const fetchSMEs = createAsyncThunk(
+  "marketplace/fetchSMEs",
+  (filters: SMEFilters) => marketplaceService.getSMEs(filters)
+);
+```
+
+A feature hook dispatches the thunk, so the component stays declarative and never touches a service.
+
+---
+
+# 7. API contract and runtime validation
+
+The backend's OpenAPI specification is the single source of truth for data shapes. The flow is **spec → generated types → runtime validation**.
+
+## 7.1 Generating types from the spec
+
+The backend serves its spec at `GET /swagger/v1/swagger.json` (available in QA, disabled in production). The frontend keeps a committed copy at `app/contracts/openapi.json` and generates TypeScript types from it through a single npm script. The script runs from the `app/` folder whenever the backend changes an endpoint or DTO; it is not part of the normal build, and its output is never hand-edited.
+
+```json
+// app/package.json
+{
+  "scripts": {
+    "generate:api": "openapi-typescript app/contracts/openapi.json --output app/models/api.types.ts"
   }
 }
 ```
 
-**JWT contents:**
+```bash
+cd app
+# Refresh the local spec from QA only when the backend changed it:
+curl https://qaquietwealth-api.azurewebsites.net/swagger/v1/swagger.json -o app/contracts/openapi.json
+# Regenerate the typed models:
+npm run generate:api
+```
 
-| Claim | Description |
+`app/models/api.types.ts` is generated output, and DTOs returned by an endpoint are never hand-written. So the spec is never a missing reference, `app/contracts/openapi.example.json` is committed as a placeholder, and CI fails if `openapi.json` is absent when codegen runs.
+
+## 7.2 Endpoints by service
+
+Each service owns a small, fixed set of endpoints.
+
+| Service | File | Endpoints |
+|---|---|---|
+| Marketplace | `app/services/MarketplaceService.ts` | `GET /api/smes`, `GET /api/smes/{id}` |
+| Trust Record | `app/services/TrustRecordService.ts` | `POST /api/trust-record-applications`, `GET /api/trust-record-applications/{id}/status` |
+| Expert Validation | `app/services/ExpertValidationService.ts` | `GET /api/validation-queue`, `POST /api/validation-queue/{id}/decision` |
+| Investment | `app/services/InvestmentService.ts` | `POST /api/investments` |
+
+## 7.3 Runtime validation with Zod
+
+Generated types exist only at compile time. To catch the case where the backend's real response drifts from its spec, every response is validated at runtime with a Zod schema in the service layer before it reaches Redux. Components never call `.parse()` on a response.
+
+| Concern | Location |
 |---|---|
-| `sub` | Auth0 user ID |
-| `email` | Corporate email from Entra ID |
-| `name` | Display name |
-| `roles` | Array of platform roles (e.g. `["investor"]`) |
-| `permissions` | Array of granted permission codes |
-| `aud` | `AUTH0_AUDIENCE` |
-| `iss` | Auth0 domain |
-| `exp` | Expiry timestamp |
-| `iat` | Issued-at timestamp |
+| Schemas, one per response shape or form payload | `app/validation/*Schema.ts` |
+| The `schema.parse(response.data)` call | `app/services/*Service.ts` |
+| Mapping a Zod failure to `ContractViolationError` | `app/utils/error-handler.ts` |
+| Logging the violation to Application Insights | `app/utils/logger.ts` |
 
-Estimated JWT payload size: **< 2 KB**.
+```ts
+// app/services/TrustRecordService.ts
+import { trustRecordStatusSchema } from "@/validation/trustRecordSchema";
+import { exceptionHandler } from "@/utils/error-handler";
 
-**Token management:**
+export async function getStatus(applicationId: string): Promise<TrustRecordStatus> {
+  try {
+    const res = await httpClient.get(`/api/trust-record-applications/${applicationId}/status`);
+    return trustRecordStatusSchema.parse(res.data); // throws on contract drift
+  } catch (error) {
+    throw exceptionHandler.handle(error);            // mapped to a user-safe error
+  }
+}
+```
 
-| Aspect | Configuration |
-|---|---|
-| Access token expiry | 60 minutes |
-| Refresh token rotation | Enabled — each use issues a new refresh token |
-| Silent refresh | `getAccessTokenSilently()` called by Auth0 SDK before expiry |
-| Token storage | Access tokens in Redux memory only; refresh token in `HttpOnly`, `Secure`, `SameSite=Strict` cookie — inaccessible to JavaScript |
-| Logout | `logout({ returnTo: window.location.origin })` — clears local session and Auth0 session |
+A schema mismatch raises a `ContractViolationError`, which `ExceptionHandler` logs with `correlationId`, endpoint, and status — without tokens or financial values. No service returns unparsed `response.data`.
 
-**Session expiry:** On `401`, the Axios interceptor in [app/services/httpInterceptors.ts](app/services/httpInterceptors.ts) calls `sessionManager.handleUnauthorized()` and redirects to login with a session-expired message.
+## 7.4 HTTP client
 
-**Auth latency:** Auth0 + Entra ID round-trip takes 1–5 seconds. A loading spinner is shown immediately when the user clicks **Continue with Microsoft** and persists until the callback resolves.
-
-**AuthAuditQueue** ([app/auth/AuthAuditQueue.ts](app/auth/AuthAuditQueue.ts)): Batches auth events (login, logout, token refresh, permission denial) and dispatches them asynchronously to Application Insights — preventing auth flow delays from synchronous logging I/O.
+All requests go through `app/services/client.ts` (`HttpClientFacade`), which attaches `Authorization: Bearer <token>`, detects `401` and triggers `sessionManager.handleUnauthorized()`, and routes unhandled errors to `ExceptionHandler`. Services reach it through `useApplicationServices().http` rather than calling `axios` or `fetch` directly.
 
 ---
 
-### 1.4.3 Authorization
+# 8. Asynchronous communication and polling
 
-#### Roles
-[app/auth/policies/roles.ts](app/auth/policies/roles.ts)
+Certification is a long-running backend process, so the frontend polls for its result. After an application is submitted, the UI calls `GET /api/trust-record-applications/{id}/status` until the status reaches a terminal state: `CERTIFIED`, `REJECTED`, or `REQUIRES_HUMAN_REVIEW`.
 
-| Code | Description |
+| File | Responsibility |
 |---|---|
-| `investor` | Browses the Marketplace, views investment details, initiates investment flow |
-| `sme_owner` | Uploads financial documents, tracks certification status |
-| `financial_analyst` | Reviews pending certification requests, issues certification decisions |
-| `sys_admin` | Full system access including user management, audit logs, and system configuration |
+| `app/polling/PollingOrchestrator.ts` | Starts, suspends, resumes, and stops the loop; dispatches status to `certificationSlice` |
+| `app/polling/strategies/FixedIntervalStrategy.ts` | 10-second interval under normal conditions |
+| `app/polling/strategies/ExponentialBackoffStrategy.ts` | Doubles the interval on `503`/network error, capped at 60 s |
+| `app/components/hooks/useCertificationProgress.ts` | Subscribes the UI to the current status |
 
-#### Permissions
-[app/auth/policies/permissions.ts](app/auth/policies/permissions.ts)
+Polling is driven entirely by the orchestrator, reached from the UI through `useCertificationProgress()`. It stops the moment a terminal state is reached, and after five consecutive failures it stops and surfaces a recoverable error. Only status transitions and failures are logged, not individual ticks.
 
-| Code | Description |
+---
+
+# 9. Security
+
+## 9.1 Authentication
+
+Authentication is delegated to Auth0, federated with Microsoft Entra ID. The frontend never implements OAuth itself; it drives Auth0 through `AuthFacade`.
+
+The flow: the user selects "Continue with Microsoft" → `AuthFacade.login()` starts Auth0 Universal Login (Authorization Code + PKCE) → Entra ID authenticates → Auth0 returns tokens to the callback → `MicrosoftProfileAdapter` normalizes the claims into a `UserSessionDTO` → the session is held in memory only → protected calls attach the access token through the HTTP interceptor.
+
+| File | Responsibility |
 |---|---|
-| `auth.login` / `auth.logout` | Session start/end |
-| `session.read` | Access authenticated screens |
-| `marketplace.browse` | View the investment marketplace and SME listings |
-| `investment.detail.view` | View full investment detail screen |
-| `investment.initiate` | Click **Invertir Ahora** and enter the investment flow |
-| `documents.upload` | Upload financial documents for certification |
-| `documents.status.read` | Track document review and certification status |
-| `validation.queue.read` | View the pending certification queue (expert panel) |
-| `validation.certify` | Issue certification decisions on SME applications |
-| `audit_log.read` | View audit trail |
-| `users.admin` / `roles.admin` / `system.config` | `sys_admin` only |
+| `app/auth/AuthFacade.ts` | login, logout, silent token retrieval, current session |
+| `app/auth/AuthMiddleware.ts` | intercepts protected requests; refreshes or handles unauthorized |
+| `app/auth/adapters/MicrosoftProfileAdapter.ts` | maps Auth0/Microsoft claims to `UserSessionDTO` |
+| `app/auth/AuthAuditQueue.ts` | batches auth events for Application Insights |
+| `app/state/sessionManager.ts` | in-memory session; logout and 401 cleanup |
 
-#### Role-Permission Mapping
-[app/auth/policies/rolePermissions.ts](app/auth/policies/rolePermissions.ts)
+Access tokens stay in memory (Redux); the refresh token sits in an `HttpOnly`, `Secure`, `SameSite=Strict` cookie that JavaScript cannot read. Access token lifetime is 60 minutes with refresh-token rotation, and `getAccessTokenSilently()` refreshes before expiry. MFA is enforced for all roles through Auth0 Adaptive MFA.
 
-| Role | Permissions |
-|---|---|
-| `investor` | `auth.login`, `auth.logout`, `session.read`, `marketplace.browse`, `investment.detail.view`, `investment.initiate` |
-| `sme_owner` | `auth.login`, `auth.logout`, `session.read`, `documents.upload`, `documents.status.read` |
-| `financial_analyst` | `auth.login`, `auth.logout`, `session.read`, `validation.queue.read`, `validation.certify`, `audit_log.read` |
-| `sys_admin` | All permissions |
+## 9.2 Authorization
 
-#### Access Policies
-[app/auth/policies/accessPolicy.ts](app/auth/policies/accessPolicy.ts)
+Authorization is permission-based. The UI checks whether the session holds a permission, never which role it is.
 
-| Policy | Required Permissions |
-|---|---|
-| `canBrowseMarketplace` | `marketplace.browse` |
-| `canViewInvestmentDetail` | `investment.detail.view` |
-| `canInitiateInvestment` | `investment.initiate` |
-| `canUploadDocuments` | `documents.upload` |
-| `canTrackCertification` | `documents.status.read` |
-| `canAccessValidationQueue` | `validation.queue.read` |
-| `canCertifySME` | `validation.certify` |
-| `canReadAuditLog` | `audit_log.read` |
-| `canManageSystem` | `users.admin`, `roles.admin`, `system.config` |
+The four roles are `investor`, `sme_owner`, `financial_analyst`, and `sys_admin`. Each maps to a set of permissions such as `marketplace.browse`, `investment.detail.view`, `investment.initiate`, `documents.upload`, `documents.status.read`, `validation.queue.read`, `validation.certify`, and `audit_log.read`. The full role-to-permission map lives in `app/auth/policies/rolePermissions.ts`, and named access policies (for example `canCertifySME`) live in `app/auth/policies/accessPolicy.ts`.
 
-#### Route Guards
-[app/auth/guards/](app/auth/guards/)
+Three guards wrap routes — `AuthGuard` blocks unauthenticated access, `GuestGuard` keeps authenticated users off public routes, and `PolicyGuard` blocks routes when a required permission is missing:
 
-**AuthGuard** — blocks unauthenticated users:
-```tsx
-<AuthGuard>
-  <DashboardLayout><MarketplacePage /></DashboardLayout>
-</AuthGuard>
-```
-
-**GuestGuard** — prevents authenticated users from accessing public routes:
-```tsx
-<GuestGuard><LoginPage /></GuestGuard>
-```
-
-**PolicyGuard** — blocks a route when the user lacks required permissions:
 ```tsx
 <AuthGuard>
   <PolicyGuard required={accessPolicy.canCertifySME}>
@@ -565,1158 +589,432 @@ Estimated JWT payload size: **< 2 KB**.
 </AuthGuard>
 ```
 
-#### Permission Check Rule
+Inside the UI, actions are gated with the policy hook rather than a role string:
 
-```ts
-// Wrong — never check roles directly
-if (user.role === "financial_analyst") { ... }
-
-// Correct — always use access policies
+```tsx
 const { hasAccess } = usePolicies();
 {hasAccess("canCertifySME") && <CertifyButton />}
 ```
 
-- **`hasAccess`** — all required permissions must be held (default for all actions).
-- **`hasSomeAccess`** — any required permission held (for dashboards and grouped menus).
-- **`getMissingPermissions`** — use in admin/debug screens or access-denied messages.
+## 9.3 Data masking
 
----
+Masking sensitive financial figures is enforced in two places, and the backend is the one that matters. A client-side hide alone is cosmetic, since anyone can open dev tools.
 
-### 1.4.4 Encryption and Data Privacy
+The backend is the real gate. For a caller without permission, or for an SME whose status is not `CERTIFIED`, the API returns the sensitive numeric fields as `null` (or omits them). The frontend therefore never receives a value it is not allowed to show, so there is nothing to leak.
 
-**In transit:**
-- All browser-to-Azure communication enforced over HTTPS / TLS 1.3. HTTP requests rejected with `301`.
-- `Strict-Transport-Security: max-age=31536000; includeSubDomains`.
-- Auth0 token exchange over HTTPS only.
-
-**Tokens:**
-- Access tokens stored **in memory only** (Redux). Never written to `localStorage`, `sessionStorage`, or IndexedDB.
-- Refresh tokens in an `HttpOnly`, `Secure`, `SameSite=Strict` cookie managed by Auth0 SDK — inaccessible to JavaScript.
-
-**Secrets management:**
-- Auth0 credentials sourced from **Azure Key Vault** at runtime via [app/settings/Settings.ts](app/settings/Settings.ts).
-- `.env.example` contains placeholder values only. No credentials in source control.
-- `Logger` strips any key matching `/token|secret|password|key/i` before emitting to Application Insights.
-
-**Privacy:**
-- No document content is cached on the client. Uploaded bytes are streamed directly to the backend.
-- CSRF protection via Auth0 `state` parameter, validated on callback before the authorization code is exchanged.
-
----
-
-### 1.4.5 Data Masking
-
-Masking operates at two independent layers:
-
-| Layer | Who | Behavior |
-|---|---|---|
-| Backend | .NET API | Returns `null` on sensitive fields when the JWT does not include `investment.detail.view` |
-| Frontend | `MaskedValue` atom | Renders `••••••••` when `value == null` or `usePolicies()` denies access |
-
-The frontend is **not** the security enforcement layer — if the backend returns `null`, the component masks it regardless of local permission state.
-
-**`MaskedValue` component** ([app/components/atoms/MaskedValue/MaskedValue.tsx](app/components/atoms/MaskedValue/MaskedValue.tsx)):
+The frontend adds a presentation mask on top. The `MaskedValue` atom renders a fallback when the value is missing or the local permission gate is false, which keeps the UI honest before the API responds and avoids interpolating a raw sensitive value into JSX.
 
 ```tsx
-interface MaskedValueProps {
-  value: string | null | undefined;
+// app/components/atoms/MaskedValue/MaskedValue.tsx
+export function MaskedValue({
+  value,
+  visible,
+  fallback = "••••••••",
+}: {
+  value: string | number | null | undefined;
   visible: boolean;
-  placeholder?: string;        // default: "••••••••"
-  as?: "span" | "p" | "td";   // default: "span"
-  "data-testid"?: string;
-}
-
-export function MaskedValue({ value, visible, placeholder = "••••••••", as: Tag = "span", ...rest }: MaskedValueProps) {
-  const isRevealed = visible && value != null;
-  return (
-    <Tag
-      aria-label={isRevealed ? undefined : t("maskedValue.hiddenLabel")}
-      aria-hidden={!isRevealed}
-      className={isRevealed ? "font-mono text-[var(--color-slate)]" : "select-none tracking-widest opacity-50"}
-      {...rest}
-    >
-      {isRevealed ? value : placeholder}
-    </Tag>
-  );
-}
-```
-
-- `value == null` → placeholder, regardless of `visible`.
-- `visible = false` → placeholder, regardless of `value`.
-- `select-none` prevents copying the placeholder text.
-
-**Masked fields** — all in Investment Detail, all require `investment.detail.view`:
-
-`revenueAmount` · `profitMargin` · `mrr` · `averageROI` · `totalRaised` · `retentionRate`
-
-Never masked: `growthRate`, `certificationStatus`, `sector`, company name.
-
-**Usage in `InvestmentDetailPanel`:**
-
-```tsx
-const canView = usePolicies().hasAccess("canViewInvestmentDetail");
-
-// Correct
-<StatCard label={t("detail.mrr")}>
-  <MaskedValue value={sme.mrr} visible={canView} data-testid="stat-mrr" />
-</StatCard>
-
-// Wrong
-canView ? <span>{sme.mrr}</span> : null
-sme.mrr ?? "N/A"
-```
-
-**Zod schema** ([app/validation/smeSchema.ts](app/validation/smeSchema.ts)):
-
-```ts
-export const smeDetailSchema = z.object({
-  id:                  z.string().uuid(),
-  name:                z.string(),
-  sector:              z.string(),
-  growthRate:          z.number(),                    // always public
-  certificationStatus: z.nativeEnum(CertificationStatus),
-
-  // nullable — backend omits these if the caller lacks the permission
-  totalRaised:   z.number().nullable(),
-  mrr:           z.string().nullable(),
-  averageROI:    z.string().nullable(),
-  profitMargin:  z.string().nullable(),
-  retentionRate: z.string().nullable(),
-  revenueAmount: z.string().nullable(),
-});
-```
-
-**Acceptance tests:**
-
-```ts
-// app/__tests__/e2e/investment-detail.spec.ts
-test("sme_owner sees masked fields", async ({ page }) => {
-  await injectAuthSession(page, { role: "sme_owner" });
-  await page.goto("/marketplace/sme-123");
-  await expect(page.getByTestId("stat-mrr")).toHaveText("••••••••");
-});
-
-test("investor sees real values", async ({ page }) => {
-  await injectAuthSession(page, { role: "investor" });
-  await page.goto("/marketplace/sme-123");
-  await expect(page.getByTestId("stat-mrr")).not.toHaveText("••••••••");
-});
-```
-
----
-
-### 1.4.6 API Communication
-
-All HTTP calls go through the centralized HTTP facade ([app/services/client.ts](app/services/client.ts)). Interceptors in [app/services/httpInterceptors.ts](app/services/httpInterceptors.ts) handle:
-- Attaching `Authorization: Bearer <token>` on every protected request.
-- Detecting `401` and triggering `sessionManager.handleUnauthorized()`.
-- Zod schema validation on every API response before data reaches Redux state.
-
-Never call `fetch` or `axios` directly — always use the injected HTTP facade via `useApplicationServices().http`.
-
----
-
-### 1.4.7 Storage Rules
-
-| Storage | Allowed Use |
-|---|---|
-| Memory (Redux) | Active session token, marketplace data, certification status |
-| Auth0 `HttpOnly` cookie | Refresh token — managed by Auth0 SDK, inaccessible to JavaScript |
-| `localStorage` | UI preferences only (theme, language) |
-| `sessionStorage` | Not used |
-
-```ts
-localStorage.setItem("theme", "dark");       // Allowed
-// localStorage.setItem("accessToken", t);  // Forbidden
-```
-
----
-
-### 1.4.8 OWASP Mitigations
-
-| OWASP Risk | Developer Responsibility | Implementation Area | Acceptance Criteria |
-|---|---|---|---|
-| XSS | Never render untrusted HTML. Do not use `dangerouslySetInnerHTML`. All dynamic text through React JSX escaping. | `app/components/`, ESLint config | PR is rejected if `dangerouslySetInnerHTML` appears. ESLint rule must fail the build. |
-| Broken Authentication | All login, logout, token retrieval, and refresh must go through `AuthFacade`. Never call Auth0 SDK from pages or components directly. | `app/auth/AuthFacade.ts`, `app/auth/AuthMiddleware.ts`, `app/services/httpInterceptors.ts` | Components never access Auth0 SDK directly. API calls receive tokens only through the interceptor. |
-| Token Exposure | Access tokens in memory only. Never store tokens in `localStorage`, `sessionStorage`, IndexedDB, or URL parameters. | `app/state/authSlice.ts`, `app/state/sessionManager.ts`, `app/services/httpInterceptors.ts` | Static analysis blocks token-related keys in browser storage. |
-| Broken Access Control | Protected routes must use `AuthGuard` + `PolicyGuard`. UI actions check permissions via `usePolicies()`, never by role string. | `app/auth/guards/`, `app/auth/policies/`, `app/components/hooks/usePolicies.ts` | Code must not contain `user.role === "..."` checks. |
-| Sensitive Data Exposure | Financial values must be masked unless the user has permission and the backend has authorized the response. | `app/components/atoms/MaskedValue/`, `InvestmentDetailPanel/` | Unauthorized users see masked or null values. Client masking is not treated as the only control. |
-| Injection | All form inputs and API responses validated with Zod schemas before reaching Redux or UI. | `app/validation/`, `app/services/`, feature hooks | Invalid payloads throw a validation error and must not update UI state. |
-| CSRF | Auth uses Auth0 Authorization Code + PKCE with the `state` parameter. No custom OAuth callbacks. | `app/auth/AuthFacade.ts`, Auth0 config | Login flow preserves PKCE and state validation. |
-| Security Misconfiguration | Environment variables and secrets through the settings layer. Secrets never committed to the repo. | `app/settings/Settings.ts`, Azure Key Vault, `.env.example` | `.env.example` contains placeholders only. |
-| Clickjacking | Application must reject iframe embedding. | Azure App Service headers / Next.js security headers | `X-Frame-Options: DENY` or `Content-Security-Policy: frame-ancestors 'none'` configured. |
-| Security Logging | Security events logged through `Logger` and `AuthAuditQueue`. Raw tokens, passwords, or financial values must never appear in logs. | `app/utils/logger.ts`, `app/auth/AuthAuditQueue.ts`, Application Insights | Logs include `correlationId`, event type, hashed userId, timestamp. Sensitive keys redacted. |
-| File Upload Abuse | Documents validated by MIME type and size before submission. Frontend validates early; backend is the final authority. | `app/validation/documentUploadSchema.ts`, `DocumentUploader/` | Files above the size limit or unsupported MIME types are rejected before upload with a clear error. |
-
-**Developer rules — apply to every feature:**
-- Do not call APIs directly from components.
-- Do not store tokens in browser-persistent storage.
-- Do not check user roles directly in components.
-- Do not log raw financial values or authentication secrets.
-- Do not create new security logic inside pages — reuse `AuthFacade`, `AuthMiddleware`, `PolicyGuard`, `usePolicies()`, and Zod schemas.
-- Every protected screen must have both an authentication and an authorization check.
-
----
-
-## 1.5 Layered Architecture
-
-The frontend uses five logical layers with **downward-only dependencies**. This section defines what code goes where — the C4 diagrams in section 1.10 explain system structure.
-
-| Layer | Responsibility | Examples | Rule |
-|---|---|---|---|
-| Presentation | Render UI and handle user interaction | Atoms, molecules, organisms, pages, layouts | May call hooks; must not call services or API clients directly |
-| Application | Orchestrate use cases and UI workflows | `useAuth`, `useMarketplace`, `useDocumentUpload`, `useExpertValidation`, `useInvestmentDetail` | Validates user actions, calls services, dispatches Redux actions |
-| Domain | Define business rules, permissions, DTOs, and validation schemas | Zod schemas, role definitions, permission policies, models | Must not import React components or infrastructure clients |
-| Services | Communicate with backend and external SDKs | `AuthFacade`, `HttpClientFacade`, `MarketplaceService`, `TrustRecordService`, `ExpertValidationService`, `InvestmentService` | Exposes clean methods to hooks; must not render UI |
-| Infrastructure | Shared technical concerns | Redux store, `SessionProvider`, `Logger`, `ExceptionHandler`, i18n, settings, design tokens | Supports other layers; must not contain feature-specific UI logic |
-
-**Dependency flow:**
-```
-UI Components
-      ↓
-Feature Hooks
-      ↓
-Application Services
-      ↓
-Infrastructure
-```
-
-### Flow Examples
-
-**Login:**
-`LoginPage` → `useAuth().login()` → `AuthFacade` (Auth0 PKCE flow) → `MicrosoftProfileAdapter` normalizes claims → `SessionManager` updates session → Redux reflects authenticated state.
-
-**Document Upload:**
-`DocumentUploadPage` → `useDocumentUpload().submit(files)` → validates with `documentUploadSchema` → `TrustRecordService` sends `POST` → backend returns `202 Accepted` → `PollingOrchestrator` starts status polling → `certificationSlice` updates the progress tracker until terminal state.
-
----
-
-## 1.6 Design Patterns
-
-### Singleton
- **Problem:** Logger, AuthFacade, PollingOrchestrator must have a single instance app-wide.
-
-**Solution:** Class with private constructor and static getInstance().
-
-**Implementation:** See app/utils/logger.ts, app/auth/AuthFacade.ts.
-
-### Observer (for polling)
-**Problem:** Certification state changes asynchronously and multiple components (progress bar, notifications) must react.
-
-**Solution:** CertificationPollingStore maintains a list of listeners and notifies changes.
-
-**Implementation:** app/state/certificationPollingStore.ts + useCertificationProgress.
-
-### Facade (Auth and services)
-**Problem:** Hooks must not know details of Auth0 or Axios.
-
-**Solution:** AuthFacade and ApplicationServiceFacade expose simple methods.
-
-**Implementation:** app/services/applicationFacade.ts injects HttpClient and AuthFacade.
-
-### Proxy (HTTP interceptor)
-**Problem:** Add Bearer token to every request and handle 401 centrally.
-
-**Solution:** Axios interceptor (proxy) that adds header and refreshes token on expiry.
-
-**Implementation:** app/services/httpInterceptors.ts.
-
-### Adapter (Microsoft claims)
-**Problem:** Auth0 returns Microsoft Entra ID claims with different names than our internal DTO.
-
-**Solution:** MicrosoftProfileAdapter transforms the object.
-
-**Implementation:** app/auth/adapters/MicrosoftProfileAdapter.ts.
-
----
-
-## 1.7 Implementation Guide
-
-### State Management
-
-State is split into **global shared state** (Redux Toolkit) and **local UI state** (`useState` / `useReducer`). Rule: if more than one component needs a value, it goes into Redux; otherwise it stays local.
-
-#### Redux Slices
-
-| Slice | File | Holds |
-|---|---|---|
-| `auth` | [app/state/slices/authSlice.ts](app/state/slices/authSlice.ts) | `isAuthenticated`, `user`, `role`, `accessToken` |
-| `marketplace` | [app/state/slices/marketplaceSlice.ts](app/state/slices/marketplaceSlice.ts) | SME listings, active filters, search query |
-| `certification` | [app/state/slices/certificationSlice.ts](app/state/slices/certificationSlice.ts) | Upload job: `applicationId`, `status`, `stage` |
-| `validation` | [app/state/slices/validationSlice.ts](app/state/slices/validationSlice.ts) | Expert queue: pending requests, selected request |
-
-#### Local State (keep out of Redux)
-- Form input values inside a single component.
-- UI toggles: modal open/close, dropdown expanded, per-button loading spinners.
-- Transient error messages that don't need to survive navigation.
-
-#### Reading State
-
-Always use typed hooks from [app/state/hooks.ts](app/state/hooks.ts):
-
-```ts
-import { useAppSelector, useAppDispatch } from "@/state/hooks";
-
-const smes     = useAppSelector(state => state.marketplace.smes);
-const dispatch = useAppDispatch();
-```
-
-#### Writing State
-
-All writes go through slice actions or async thunks:
-
-```ts
-dispatch(certificationSlice.actions.certificationStarted(applicationId));
-```
-
-#### Async Operations
-
-Use `createAsyncThunk` for API calls. Thunks handle `pending`, `fulfilled`, and `rejected` automatically:
-
-```ts
-export const fetchSMEs = createAsyncThunk(
-  "marketplace/fetchSMEs",
-  async (filters: SMEFilters) => {
-    return await marketplaceService.getSMEs(filters);
+  fallback?: string;
+}) {
+  if (!visible || value === null || value === undefined) {
+    return <span aria-label="Restricted value">{fallback}</span>;
   }
-);
-```
-
-State transitions follow the thunk lifecycle: `pending → loading`, `fulfilled → succeeded`, `rejected → failed`.
-
-#### Infrastructure Files
-
-| File | Purpose |
-|---|---|
-| [app/state/store.ts](app/state/store.ts) | Configures the Redux store; registers all slices |
-| [app/state/StoreProvider.tsx](app/state/StoreProvider.tsx) | Wraps the app with `<Provider store={store}>` |
-| [app/state/hooks.ts](app/state/hooks.ts) | Exports typed `useAppSelector` and `useAppDispatch` |
-
----
-
-### Async Communication and Polling
-
-Document certification is a long-running async process. The frontend polls `GET /api/trust-record-applications/{id}/status` every 10 seconds until status reaches `CERTIFIED`, `REJECTED`, or `REQUIRES_HUMAN_REVIEW`.
-
-| File | Description |
-|---|---|
-| [PollingOrchestrator.ts](app/polling/PollingOrchestrator.ts) | Starts, suspends, and stops the polling loop; dispatches status to `certificationSlice` |
-| [FixedIntervalStrategy.ts](app/polling/strategies/FixedIntervalStrategy.ts) | 10-second fixed interval (normal operation) |
-| [ExponentialBackoffStrategy.ts](app/polling/strategies/ExponentialBackoffStrategy.ts) | Doubles interval on each failure, capped at 60 s; activated on `503` or network error |
-
----
-
-### Events
-
-**1. Redux dispatch — intra-app state:**
-
-```ts
-dispatch(certificationSlice.actions.certificationCompleted({ applicationId, trustScore }));
-dispatch(validationSlice.actions.decisionIssued({ requestId, decision: "approved" }));
-```
-
-**2. Custom DOM events — UI side-effects only** (e.g. Toast notifications, global loaders):
-
-```ts
-// app/utils/eventBus.ts
-export const eventBus = {
-  emit<T>(name: string, detail: T) {
-    window.dispatchEvent(new CustomEvent(name, { detail }));
-  },
-  on<T>(name: string, handler: (detail: T) => void) {
-    const listener = (e: Event) => handler((e as CustomEvent<T>).detail);
-    window.addEventListener(name, listener);
-    return () => window.removeEventListener(name, listener);
-  },
-};
-
-// Emit from service layer
-eventBus.emit("toast:show", { message: "Documents submitted successfully", type: "success" });
-
-// Subscribe in Toast organism (mounted once at layout level)
-useEffect(() => eventBus.on("toast:show", setToast), []);
-```
-
-**Rules:**
-- Custom DOM events are for UI side-effects only. Business state always goes through Redux.
-- Event names use `namespace:verb` format: `toast:show`, `session:expired`.
-- Every `on()` subscription must return its cleanup function and be called inside `useEffect`.
-
----
-
-### Observability
-
-| File | Description |
-|---|---|
-| [app/utils/logger.ts](app/utils/logger.ts) | Singleton logger — emits `info`, `warn`, `error` to Azure Application Insights |
-| [app/utils/error-handler.ts](app/utils/error-handler.ts) | Singleton — maps HTTP codes to user-facing messages; routes 5xx to App Insights |
-
-**Logged events:**
-
-| Event | Trigger |
-|---|---|
-| `AuthLoginStarted` | User clicks **Continue with Microsoft** |
-| `AuthLoginCompleted` | Session established after token exchange |
-| `AuthLoginFailed` | Auth0 returns error on callback |
-| `AuthLogoutCompleted` | Logout flow finishes |
-| `DocumentsSubmitted` | `POST /api/trust-record-applications` sent |
-| `CertificationPollingStarted` | `PollingOrchestrator.start()` called |
-| `CertificationStatusChanged` | Any state transition detected by polling |
-| `CertificationCompleted` | Status reaches `CERTIFIED` |
-| `CertificationRejected` | Status reaches `REJECTED` |
-| `ValidationDecisionIssued` | Expert certifies or rejects a request |
-| `InvestmentDetailViewed` | User opens Investment Detail screen |
-| `ApiRequestFailed` | Any HTTP error from `ExceptionHandler` |
-| `ContractViolationError` | Zod schema mismatch on API response |
-| `UnhandledExceptionCaptured` | React error boundary catches render crash |
-
-**Rules:**
-- Every event must include: `correlationId`, `userId` (hashed), `role`, `timestamp`, `appVersion`.
-- Do not log raw financial values — log identifiers only (`applicationId`, `smeId`).
-- Do not log every polling tick — log only meaningful status transitions and exceptional failures.
-
-**Error handling by HTTP status:**
-
-| Status | User-facing behavior |
-|---|---|
-| `400` | Inline form validation error next to the offending field |
-| `401` | Silent token refresh attempted; if it fails, redirect to login with session-expired message |
-| `403` | Toast: "You don't have permission to perform this action" |
-| `404` | Redirect to not-found page |
-| `429` | Toast with retry countdown; `ExponentialBackoffStrategy` activated |
-| `5xx` | Toast with support reference number; polling retries up to 5 times |
-
----
-
-### Data Validation
-
-| File | Description |
-|---|---|
-| [app/validation/documentUploadSchema.ts](app/validation/documentUploadSchema.ts) | Validates MIME types (`application/pdf`, `application/vnd.ms-excel`, `image/*`), max 10 MB/file |
-| [app/validation/smeSchema.ts](app/validation/smeSchema.ts) | Validates SME listing and investment detail API response shapes |
-| [app/validation/userSchema.ts](app/validation/userSchema.ts) | Validates user profile shape from Auth0 token claims |
-
-A schema mismatch throws a `ContractViolationError` logged to Application Insights with the full response payload.
-
----
-
-### Caching
-
-| Layer | Strategy |
-|---|---|
-| Marketplace listings | Stored in Redux; stale after 5 minutes — triggers fresh fetch |
-| Investment detail | Stored in Redux per `smeId`; invalidated on certification status change |
-| Certification status polling | `Cache-Control: no-store` — always fresh |
-| Static assets (JS, CSS, SVG) | Content-hash filenames; `max-age=31536000, immutable` via Azure CDN |
-
----
-
-### API Contracts
-
-The frontend treats the backend OpenAPI spec as the single source of truth. Workflow: **spec first → generate types → validate at runtime**.
-
-**Refresh the local spec from a running QA backend:**
-```bash
-curl https://qaquietwealth-api.azurewebsites.net/swagger/v1/swagger.json \
-  -o app/contracts/openapi.json
-```
-
-**Regenerate types after a spec update:**
-```bash
-npx openapi-typescript app/contracts/openapi.json --output app/models/api.types.ts
-```
-
-Never hand-write DTO types for backend endpoints — always regenerate from the spec.
-
-**Endpoints by service:**
-
-| Service | File | Endpoints |
-|---|---|---|
-| Marketplace | [MarketplaceService.ts](app/services/MarketplaceService.ts) | `GET /api/smes` · `GET /api/smes/{id}` |
-| Trust Record | [TrustRecordService.ts](app/services/TrustRecordService.ts) | `POST /api/trust-record-applications` · `GET /api/trust-record-applications/{id}/status` |
-| Expert Validation | [ExpertValidationService.ts](app/services/ExpertValidationService.ts) | `GET /api/validation-queue` · `POST /api/validation-queue/{id}/decision` |
-| Investment | [InvestmentService.ts](app/services/InvestmentService.ts) | `POST /api/investments` |
-
-**Runtime validation** — every API response is validated with Zod before reaching Redux, catching backend contract drift that TypeScript alone cannot catch at runtime:
-
-```ts
-// TrustRecordService.ts
-async getStatus(applicationId: string): Promise<TrustRecordStatus> {
-  const response = await httpClient.get(`/api/trust-record-applications/${applicationId}/status`);
-  return trustRecordStatusSchema.parse(response.data);  // throws ContractViolationError on mismatch
+  return <span>{value}</span>;
 }
 ```
 
----
+The visibility gate combines permission with the server-confirmed certification status:
 
-### Performance Optimization
-
-**Code splitting:** Next.js App Router splits at route segment level automatically.
-
-**Lazy loading and memoization:**
 ```tsx
-const InvestmentDetailPage = lazy(() => import("@/components/pages/InvestmentDetailPage"));
-const ExpertValidationPage  = lazy(() => import("@/components/pages/ExpertValidationPage"));
+// app/components/organisms/InvestmentDetailPanel/InvestmentDetailPanel.tsx
+const { hasAccess } = usePolicies();
+const canShow = hasAccess("canViewInvestmentDetail") && sme.certificationStatus === "CERTIFIED";
 
-<Suspense fallback={<Spinner />}>
-  <InvestmentDetailPage />
-</Suspense>
+<MaskedValue value={sme.revenueAmount} visible={canShow} />
+<MaskedValue value={sme.averageRoi}   visible={canShow} />
 ```
 
-**Bundle limits:**
-- `next-bundle-analyzer` runs in CI; any chunk exceeding **250 KB** fails the pipeline.
-- Lucide React: named imports only — `import { TrendingUp, Shield } from "lucide-react"`.
-- TailwindCSS JIT eliminates unused utility classes at build time.
+A sensitive field is never rendered with raw JSX interpolation; it always passes through `MaskedValue`. Unit tests cover the visible and hidden branches, and an E2E test confirms an unauthorized user sees the mask rather than the value.
 
-**Image optimization:**
-- All rasterized assets use Next.js `<Image>` with explicit `width`/`height`.
-- Logos served as inline SVG only — no raster formats.
+## 9.4 OWASP mitigations
 
-**List virtualization:**
-```tsx
-import { FixedSizeList } from "react-window";
+Each risk is mitigated by a specific mechanism in a specific part of the frontend.
 
-<FixedSizeList height={600} itemCount={smes.length} itemSize={120} width="100%">
-  {({ index, style }) => <SMECard style={style} sme={smes[index]} />}
-</FixedSizeList>
-```
-
-Apply `react-window` (`FixedSizeList`) to the Marketplace grid and Expert Validation Queue when row count exceeds 100.
+| Risk | Mitigation | Location |
+|---|---|---|
+| XSS | All dynamic text rendered through JSX escaping; `dangerouslySetInnerHTML` banned by ESLint, which fails the build if it appears. | `app/components/**`, ESLint config |
+| Broken authentication | Every login/logout/token operation flows through `AuthFacade`; no component imports the Auth0 SDK, and tokens are attached only by the interceptor. | `app/auth/AuthFacade.ts`, `AuthMiddleware.ts` |
+| Token exposure | Access tokens live in memory only; nothing is written to `localStorage`, `sessionStorage`, IndexedDB, or URLs. | `app/state/authSlice.ts`, `sessionManager.ts` |
+| Broken access control | Routes are wrapped in `AuthGuard`/`PolicyGuard`, and actions are gated with `usePolicies()`; no role comparisons in the UI. | `app/auth/guards/**`, `app/auth/policies/**` |
+| Sensitive data exposure | Values masked via `MaskedValue`, backed by backend nulling (§9.3). | `MaskedValue`, `InvestmentDetailPanel` |
+| Injection | Every form input and API response validated with Zod; invalid payloads never reach Redux. | `app/validation/**`, `app/services/**` |
+| CSRF | Auth0 Authorization Code + PKCE with `state` validation; no hand-rolled OAuth callback. | `AuthFacade`, Auth0 config |
+| Security misconfiguration | Secrets read through the settings layer / Key Vault; none committed. | `app/settings/Settings.ts`, `.env.example` |
+| Clickjacking | Iframe embedding rejected via `X-Frame-Options: DENY` / `frame-ancestors 'none'`. | `next.config.ts`, App Service headers |
+| Insufficient logging | Security events logged through `Logger` and `AuthAuditQueue` with secrets redacted. | `app/utils/logger.ts`, `AuthAuditQueue.ts` |
+| File upload abuse | MIME and size validated before upload, with the backend re-validating. | `DocumentUploader`, `documentUploadSchema.ts` |
 
 ---
 
-## 1.8 Testing
+# 10. Observability
 
-### Unit Tests (Jest)
+Observability runs on Azure Application Insights, reached through the App Insights JS SDK wrapped by a singleton `Logger`. Two files own it: `app/utils/logger.ts` emits `info`/`warn`/`error`, and `app/utils/error-handler.ts` maps HTTP codes to user-facing messages and forwards 5xx with context.
 
-| Folder | What is tested |
+| Event | Emitted from |
 |---|---|
-| [app/__tests__/unit/auth/](app/__tests__/unit/auth/) | `AuthFacade`, `hasPermission`, `getMissingPermissions`, `MicrosoftProfileAdapter` |
-| [app/__tests__/unit/polling/](app/__tests__/unit/polling/) | `PollingOrchestrator` state transitions, `FixedIntervalStrategy`, `ExponentialBackoffStrategy` |
-| [app/__tests__/unit/services/](app/__tests__/unit/services/) | `MarketplaceService`, `TrustRecordService`, `ExpertValidationService` — with `HttpClientFacade` mocked |
-| [app/__tests__/unit/validation/](app/__tests__/unit/validation/) | Zod schemas: valid payloads pass; invalid payloads produce expected error shapes |
+| `AuthLoginStarted` | `AuthFacade.login()` |
+| `AuthLoginCompleted` | `AuthFacade` callback handler |
+| `AuthLoginFailed` | `AuthFacade` / `ExceptionHandler` |
+| `DocumentsSubmitted` | `useDocumentUpload` after `POST` is accepted |
+| `CertificationPollingStarted` | `PollingOrchestrator.start()` |
+| `CertificationStatusChanged` | `PollingOrchestrator` on a transition |
+| `CertificationCompleted` | `PollingOrchestrator` on `CERTIFIED` |
+| `ValidationDecisionIssued` | `ExpertValidationService` |
+| `InvestmentDetailViewed` | `useInvestmentDetail` |
+| `ApiRequestFailed` | `ExceptionHandler` |
+| `ContractViolationError` | `ExceptionHandler` (Zod mismatch) |
+| `UnhandledExceptionCaptured` | React error boundary |
 
-**Rules per unit test:**
-- Cover expected behavior, edge cases (empty, loading, error states), and exception paths.
-- Mock all external dependencies.
-- Never call real APIs, Auth0, or Azure services.
+Every event carries `correlationId`, hashed `userId`, `role`, `timestamp`, and `appVersion`. Access and refresh tokens, passwords, secrets, raw financial values, and document contents are never logged; events carry identifiers (`applicationId`, `smeId`) rather than the data behind them, and polling logs transitions and failures rather than individual ticks. Application Insights dashboards track P95/P99 page load, certification polling success rate, auth error rate, and marketplace search latency.
+
+Error handling is centralized so the UI behaves consistently:
+
+| Status | UI behavior |
+|---|---|
+| 400 | Inline validation error next to the field |
+| 401 | Silent refresh; if it fails, redirect to login with a session-expired message |
+| 403 | Toast: permission denied for this action |
+| 404 | Redirect to not-found |
+| 429 | Toast with retry countdown; backoff strategy activates |
+| 5xx | Toast with a support reference; polling retries up to five times |
+
+---
+
+# 11. Testing
+
+## 11.1 Unit tests (Jest)
+
+| Folder | Covers |
+|---|---|
+| `app/__tests__/unit/auth/` | `AuthFacade`, guards, permission helpers, `MicrosoftProfileAdapter` |
+| `app/__tests__/unit/polling/` | `PollingOrchestrator` transitions, both strategies, terminal states |
+| `app/__tests__/unit/services/` | Services with a mocked `HttpClientFacade` |
+| `app/__tests__/unit/validation/` | Zod schemas — valid payloads pass, invalid ones fail with the expected shape |
+
+Statement coverage holds at or above 80% on `app/auth/**`, `app/polling/**`, `app/services/**`, and `app/validation/**`, enforced as a CI gate. Tests mock external dependencies and never call real Auth0, Azure, or the backend.
 
 ```ts
-// MicrosoftProfileAdapter.test.ts
-it("maps Entra ID oid to userId", () => {
-  const adapter = new MicrosoftProfileAdapter();
-  const dto = adapter.adapt({ oid: "abc123", preferred_username: "user@corp.com", name: "Jane" });
+it("maps the Entra ID oid to userId", () => {
+  const dto = new MicrosoftProfileAdapter().adapt({
+    oid: "abc123", preferred_username: "user@corp.com", name: "Jane",
+  });
   expect(dto.userId).toBe("abc123");
 });
 ```
 
-**Coverage threshold — minimum 80% statement coverage on critical paths:**
+## 11.2 E2E tests (Playwright + msw)
 
-```ts
-// jest.config.ts
-coverageThreshold: {
-  "app/auth/**":       { statements: 80 },
-  "app/polling/**":    { statements: 80 },
-  "app/services/**":   { statements: 80 },
-  "app/validation/**": { statements: 80 },
-},
-```
+E2E tests run against a local Next.js server, with the backend mocked by `msw` and Auth0 bypassed via an injected session fixture. There is one file per business flow under `app/__tests__/e2e/`:
 
-Coverage reports are published as GitHub Actions artifacts on every CI run. PRs that drop below threshold are blocked.
+| Flow | File |
+|---|---|
+| Login | `login.spec.ts` |
+| Marketplace | `marketplace.spec.ts` |
+| Document upload | `document-upload.spec.ts` |
+| Expert validation | `expert-validation.spec.ts` |
 
----
-
-### Integration / E2E Tests (Playwright + msw)
-
-Playwright tests run against a local Next.js dev server. Backend is mocked with `msw`. Auth0 is bypassed via a test fixture injected into Redux.
-
-**Folder structure:**
-```
-app/__tests__/e2e/
-├── login.spec.ts
-├── marketplace.spec.ts
-├── document-upload.spec.ts
-└── expert-validation.spec.ts
-```
-
-One file per business flow. Kebab-case for multi-word flows. Do not place E2E files next to components.
-
-#### How to Write a Test
-
-```ts
-// app/__tests__/e2e/marketplace.spec.ts
-import { test, expect } from "@playwright/test";
-import { injectAuthSession } from "../fixtures/auth";
-import { MarketplacePOM } from "./pages/MarketplacePage";
-
-test.describe("Marketplace", () => {
-  test.beforeEach(async ({ page }) => {
-    await injectAuthSession(page, { role: "investor" });
-    await page.goto("/marketplace");
-  });
-
-  test("displays SME cards after loading", async ({ page }) => {
-    const marketplace = new MarketplacePOM(page);
-    await marketplace.waitForCards();
-    expect(await marketplace.cardCount()).toBeGreaterThan(0);
-  });
-
-  test("filters by sector", async ({ page }) => {
-    const marketplace = new MarketplacePOM(page);
-    await marketplace.selectSector("Technology");
-    const cards = await marketplace.getVisibleCards();
-    expect(cards.every(c => c.sector === "Technology")).toBe(true);
-  });
-});
-```
-
-**Rules:**
-- Use `test.describe` to group cases under the same flow.
-- Use `test.beforeEach` for auth and navigation setup — never repeat inside individual tests.
-- Each `test()` block tests one observable behavior.
-- Name tests as plain sentences: `"displays SME cards after loading"`, not `"test marketplace loads"`.
-
-#### Page Object Model (POM)
-
-Every screen gets a POM in `app/__tests__/e2e/pages/`. POMs own all selectors and interactions.
-
-```ts
-// app/__tests__/e2e/pages/MarketplacePage.ts
-export class MarketplacePOM {
-  constructor(private page: Page) {}
-
-  async waitForCards() {
-    await this.page.waitForSelector("[data-testid='sme-card']");
-  }
-
-  async cardCount() {
-    return this.page.locator("[data-testid='sme-card']").count();
-  }
-}
-```
-
-All `data-testid` attributes are defined in the component, not hardcoded in test files.
-
-#### Auth Fixture
-
-Auth0 is never called in tests. Inject a session directly:
-
-```ts
-await injectAuthSession(page, { role: "investor" });
-```
-
-`SessionProvider` reads `window.__TEST_AUTH__` when present and skips the Auth0 flow.
-
-#### Backend Mock (msw)
-
-```ts
-// app/__tests__/mocks/handlers.ts
-import { http, HttpResponse } from "msw";
-import { smeListFixture } from "../fixtures/sme";
-
-export const handlers = [
-  http.get("/api/smes", () => HttpResponse.json(smeListFixture)),
-];
-```
-
-Override a handler for a specific test:
-```ts
-test("shows error banner when API fails", async ({ page }) => {
-  await page.route("**/api/smes", route => route.fulfill({ status: 500 }));
-  await page.goto("/marketplace");
-  await expect(page.getByTestId("error-banner")).toBeVisible();
-});
-```
-
-#### Configuration
-
-```ts
-// playwright.config.ts
-export default defineConfig({
-  projects: [
-    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
-    { name: "firefox",  use: { ...devices["Desktop Firefox"] } },
-  ],
-  use: { baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000" },
-  retries: process.env.CI ? 2 : 0,
-  reporter: [["html"], ["github"]],
-});
-```
-
-**Commands:**
-- Run all: `npx playwright test`
-- Run single file: `npx playwright test marketplace.spec.ts`
-- UI mode: `npx playwright test --ui`
+Selectors live in Page Object Models under `app/__tests__/e2e/pages/`, and every targeted element exposes a `data-testid` defined in the component rather than a hardcoded string in the test. The tests reach no real Auth0, Azure, or backend service.
 
 ---
 
-## 1.9 CI/CD
+# 12. CI/CD and environments
 
-**Technology:** GitHub Actions. Pipeline files in [`.github/workflows/`](.github/workflows/). Two protected branches: `staging` (QA) and `main` (Production). Merging into either is the only deployment trigger.
+GitHub Actions runs the pipelines, and deployment authenticates to Azure with OIDC, so no long-lived Azure credentials are stored. Two protected branches deploy: `staging` to QA, and `main` to Production with manual approval.
 
-**GitHub Environments:** Configured under **Repository → Settings → Environments**. `Production` requires manual approval before the deploy job runs.
-
-### Deployment Flow
-
-```
-developer push
-      │
-      ▼
-ci-frontend + ci-backend + security-scan (on PR)
-lint · typecheck · test · build
-      │
-      │ all checks pass
-      ▼
-branch = staging?
-  yes → deploy-qa → qaquietwealth-frontend + qaquietwealth-api
-  no  → stops (feature branches do not deploy)
-      │
-      │ merge staging → main
-      ▼
-deploy-prod (manual approval required)
-      │
-      ▼
-prodquietwealth-frontend + prodquietwealth-api
-```
-
-Authentication to Azure uses **OIDC** — no stored credentials. GitHub exchanges a short-lived token with Azure Entra ID at deploy time.
-
-### Pipeline Files
-
-| File | Trigger | Scope |
+| Workflow | Trigger | Steps |
 |---|---|---|
-| [ci-frontend.yml](.github/workflows/ci-frontend.yml) | Push to any branch, `app/**` | `npm ci` → ESLint → Prettier → `tsc --noEmit` → Jest + coverage → build → bundle analysis |
-| [ci-backend.yml](.github/workflows/ci-backend.yml) | Push to any branch, `server/**` | `dotnet restore` → `dotnet build` → `dotnet test` → `dotnet format --verify-no-changes` |
-| [security-scan.yml](.github/workflows/security-scan.yml) | Pull requests only | `npm audit` · OSSF Scorecard · `gitleaks` secret scanning |
-| [deploy-qa-frontend.yml](.github/workflows/deploy-qa-frontend.yml) | Push to `staging`, `app/**` | Build → upload artifact → Azure login (OIDC) → `azure/webapps-deploy` |
-| [deploy-qa-api.yml](.github/workflows/deploy-qa-api.yml) | Push to `staging`, `server/**` | Build → publish → Azure login (OIDC) → `azure/webapps-deploy` |
-| [deploy-prod-frontend.yml](.github/workflows/deploy-prod-frontend.yml) | Push to `main`, `app/**` + approval | Same as QA; targets `prodquietwealth-frontend` |
-| [deploy-prod-api.yml](.github/workflows/deploy-prod-api.yml) | Push to `main`, `server/**` + approval | Same as QA; targets `prodquietwealth-api` |
+| `ci-frontend.yml` | push to any branch, `app/**` | install → lint → typecheck → test + coverage → build → bundle analysis |
+| `security-scan.yml` | pull requests | `npm audit`, secret scan, dependency checks |
+| `deploy-qa-frontend.yml` | push to `staging`, `app/**` | build artifact → Azure login (OIDC) → deploy to QA App Service |
+| `deploy-prod-frontend.yml` | push to `main`, `app/**`, + approval | same, targeting Production |
 
-### Workflow Structure
+```mermaid
+flowchart TD
+  Dev["Developer pushes branch"]
+  CI["CI: lint, typecheck, test, build"]
+  PR["Pull request review"]
+  Stg["Merge to staging"]
+  QA["Deploy to QA"]
+  Main["Merge staging to main"]
+  Appr["Production approval"]
+  Prod["Deploy to Production"]
 
-Every deploy workflow uses a two-job pattern. The build job has no Azure permissions; only the deploy job requests `id-token: write` for OIDC.
-
-```yaml
-# .github/workflows/deploy-qa-frontend.yml
-on:
-  push:
-    branches: [staging]
-    paths: [app/**]
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    environment: QA
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '22', cache: 'npm', cache-dependency-path: app/package-lock.json }
-      - run: npm ci
-        working-directory: app
-      - run: npm run lint
-        working-directory: app
-      - run: npm run format:check
-        working-directory: app
-      - run: npx tsc --noEmit
-        working-directory: app
-      - run: npm run test:coverage
-        working-directory: app
-      - run: npm run build
-        working-directory: app
-        env:
-          NEXT_PUBLIC_AUTH0_DOMAIN:    ${{ secrets.AUTH0_DOMAIN }}
-          NEXT_PUBLIC_AUTH0_CLIENT_ID: ${{ secrets.AUTH0_CLIENT_ID }}
-          NEXT_PUBLIC_API_BASE_URL:    ${{ secrets.API_BASE_URL }}
-      - uses: actions/upload-artifact@v4
-        with: { name: node-app, path: app/.next/ }
-
-  deploy:
-    runs-on: ubuntu-latest
-    needs: build
-    environment: QA
-    permissions:
-      id-token: write   # required for OIDC — must NOT be on the build job
-      contents: read
-    steps:
-      - uses: actions/download-artifact@v4
-        with: { name: node-app }
-      - uses: azure/login@v2
-        with:
-          client-id:       ${{ secrets.AZUREAPPSERVICE_CLIENTID_QA_FRONTEND }}
-          tenant-id:       ${{ secrets.AZUREAPPSERVICE_TENANTID_QA }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_QA }}
-      - uses: azure/webapps-deploy@v3
-        with:
-          app-name: qaquietwealth-frontend
-          package: .
+  Dev --> CI --> PR --> Stg --> QA --> Main --> Appr --> Prod
 ```
 
-`NEXT_PUBLIC_*` variables are baked into the Next.js bundle at build time. Do **not** add them under Azure App Service **Configuration → Application settings**.
-
-### Pre-commit Hooks
-
-Husky runs `lint-staged` before every local commit:
-
-```json
-// app/.lintstagedrc.json
-{
-  "app/**/*.{ts,tsx}": ["eslint --fix", "prettier --write"],
-  "app/**/*.{css,json}": ["prettier --write"]
-}
-```
-
-ESLint rules enforced on every commit:
-- `no-restricted-syntax` → no `dangerouslySetInnerHTML`
-- `no-restricted-globals` → no `localStorage.setItem` / `sessionStorage.setItem` with token-related keys
-- `no-console` → use `Logger` from `app/utils/logger.ts`
-- `i18n/no-literal-string` → no hardcoded display strings outside i18n keys
-
-### Secrets
-
-#### Local Development
-
-Create `app/.env.local` (gitignored). Copy from `app/.env.example` and fill in values:
+Local secrets live in `app/.env.local` (gitignored), copied from `app/.env.example`:
 
 ```bash
 NEXT_PUBLIC_AUTH0_DOMAIN=dev-xxxx.us.auth0.com
-NEXT_PUBLIC_AUTH0_CLIENT_ID=<Auth0 dashboard → Applications → QuietWealth Dev → Settings>
+NEXT_PUBLIC_AUTH0_CLIENT_ID=<from Auth0 dashboard>
 NEXT_PUBLIC_API_BASE_URL=http://localhost:5000
-AUTH0_SECRET=<generate: openssl rand -hex 32>
+AUTH0_SECRET=<random 32-char string>
 ```
 
-#### QA and Production (GitHub Actions)
-
-Secrets live in **GitHub → Repository → Settings → Environments → QA / Production → Environment secrets**.
-
-| Secret | Environment | Source |
-|---|---|---|
-| `AZUREAPPSERVICE_CLIENTID_QA_FRONTEND` | QA | Output of [`infra/setup-github-oidc.ps1`](infra/setup-github-oidc.ps1) |
-| `AZUREAPPSERVICE_CLIENTID_QA_API` | QA | Output of [`infra/setup-github-oidc.ps1`](infra/setup-github-oidc.ps1) |
-| `AZUREAPPSERVICE_TENANTID_QA` | QA | Azure Portal → Entra ID → Overview → Tenant ID |
-| `AZUREAPPSERVICE_SUBSCRIPTIONID_QA` | QA | Azure Portal → Subscriptions |
-| `AUTH0_DOMAIN` | QA + Production | Auth0 dashboard → Tenant Settings |
-| `AUTH0_CLIENT_ID` | QA + Production | Auth0 dashboard → Applications → QuietWealth QA/Prod |
-| `API_BASE_URL` | QA | `https://qaquietwealth-api.azurewebsites.net` |
-| `AZUREAPPSERVICE_CLIENTID_PROD_FRONTEND` | Production | Output of [`infra/setup-github-oidc.ps1`](infra/setup-github-oidc.ps1) |
-| `AZUREAPPSERVICE_CLIENTID_PROD_API` | Production | Output of [`infra/setup-github-oidc.ps1`](infra/setup-github-oidc.ps1) |
-| `AZUREAPPSERVICE_TENANTID_PROD` | Production | Azure Portal → Entra ID → Overview → Tenant ID |
-| `AZUREAPPSERVICE_SUBSCRIPTIONID_PROD` | Production | Azure Portal → Subscriptions |
-| `API_BASE_URL` | Production | `https://prodquietwealth-api.azurewebsites.net` |
-
-Backend secrets (`ConnectionStrings__QuietWealthSql`, `BlobStorage__ConnectionString`, `NotificationHub__ConnectionString`, `AUTH0_CLIENT_SECRET`) are provisioned as Azure App Service Application settings via Bicep — they never pass through GitHub Actions.
-
-### OIDC and Azure App Registrations
-
-The script [`infra/setup-github-oidc.ps1`](infra/setup-github-oidc.ps1) automates one-time OIDC setup. Run it locally with `az login` and `gh auth login` active before the first deployment to each environment.
-
-**What the script does for each app × environment** (`frontend-qa`, `api-qa`, `frontend-prod`, `api-prod`):
-1. Creates an **Entra ID App Registration** named `qw-{env}-{role}-deploy`.
-2. Creates a **Service Principal** for it.
-3. Adds a **Federated Credential** with issuer `https://token.actions.githubusercontent.com`, subject `repo:danielpulido01/QuietWealth:environment:QA` (or `Production`), audience `api://AzureADTokenExchange`.
-4. Assigns the **Contributor** role scoped to the specific Web App resource — not subscription-wide.
-5. Writes the three OIDC secrets (`CLIENTID`, `TENANTID`, `SUBSCRIPTIONID`) into the correct GitHub Environment via `gh secret set`.
-
-**Critical constraints:**
-- Each Web App has its own App Registration and `clientId`. `tenantId` and `subscriptionId` are shared within an environment.
-- Do not reuse the same App Registration across frontend and API.
-- Bicep infra secrets are passed via `.bicepparam` using `readEnvironmentVariable()`. Set them in your shell before running `deploy.ps1`:
-
-```powershell
-$env:QW_SQL_CONNECTION       = '...'
-$env:BLOB_CONNECTION         = '...'
-$env:NOTIFICATION_CONNECTION = '...'
-.\infra\deploy.ps1 -Environment qa
-```
-
-Infra deployment is **manual only** from a developer machine — not from GitHub Actions. Bicep provisions Azure resources; GitHub Actions only deploys application code.
-
-### Infrastructure Resources (Bicep)
-
-[`infra/`](infra/) — subscription scope. Deploys the resource group and all Azure resources.
-
-| Resource | QA | Production |
-|---|---|---|
-| App Service Plan | `asp-qw-qa` (B1) | `asp-qw-prod` (B1) |
-| Frontend Web App | `qaquietwealth-frontend` (Node 24 LTS) | `prodquietwealth-frontend` |
-| API Web App | `qaquietwealth-api` (DOTNETCORE 10.0) | `prodquietwealth-api` |
-
-**Frontend App Service settings (Bicep-provisioned):**
-- `WEBSITE_NODE_DEFAULT_VERSION = ~22`
-- `SCM_DO_BUILD_DURING_DEPLOYMENT = false` — Oryx disabled; deploys pre-built `.next/`
-
-**API App Service settings (Bicep-provisioned):**
-- `ASPNETCORE_ENVIRONMENT = Production` (prod) / `Development` (QA — enables Swagger UI)
-- `ConnectionStrings__QuietWealthSql`, `BlobStorage__ConnectionString`, `NotificationHub__ConnectionString` — injected from `.bicepparam`
-- `AllowedOrigins__0 = https://{frontendAppName}.azurewebsites.net`
+QA and Production secrets live in GitHub Environments and are injected at pipeline runtime. `NEXT_PUBLIC_*` values are baked into the bundle at build time and are not App Service runtime settings. Backend-only secrets — database and Blob connection strings, the Auth0 client secret — never pass through the frontend or GitHub Actions; they are provisioned to the API as Azure App Service settings via Key Vault.
 
 ---
 
-## 1.10 Architecture Diagrams (C4)
+# 13. Source code structure
 
-### C4 Level 1 — System Context
+The frontend source layout under `app/`:
 
-```mermaid
-C4Context
-title QuietWealth - System Context
-
-Person(smeOwner, "SME Owner", "Uploads financial documents and tracks certification status")
-Person(financialAnalyst, "Financial Analyst", "Reviews SME applications and issues certification decisions")
-Person(investor, "Investor", "Browses certified SMEs and views investment detail")
-Person(sysAdmin, "System Administrator", "Manages users, roles, configuration, and audit visibility")
-
-System(qw, "QuietWealth", "Financial trust record and certified SME investment marketplace")
-
-System_Ext(auth0, "Auth0", "Identity broker using OAuth 2.0 Authorization Code + PKCE")
-System_Ext(entra, "Microsoft Entra ID", "Corporate identity provider")
-System_Ext(appInsights, "Azure Application Insights", "Observability, logs, metrics, and traces")
-
-Rel(smeOwner, qw, "Uses", "HTTPS")
-Rel(financialAnalyst, qw, "Uses", "HTTPS")
-Rel(investor, qw, "Uses", "HTTPS")
-Rel(sysAdmin, qw, "Uses", "HTTPS")
-
-Rel(qw, auth0, "Authenticates users through", "OIDC / OAuth 2.0 PKCE")
-Rel(auth0, entra, "Federates authentication to")
-Rel(qw, appInsights, "Sends telemetry to")
+```txt
+app/
+├── layout.tsx · page.tsx · globals.css
+├── login/page.tsx
+├── marketplace/page.tsx
+├── marketplace/[id]/page.tsx
+├── documents/page.tsx
+├── validation/page.tsx
+├── admin/page.tsx
+│
+├── components/
+│   ├── atoms/        Button, Badge, Input, Label, Spinner, ProgressBar,
+│   │                 TrustIndicator, StatCard, MaskedValue
+│   ├── molecules/    SMECard, FilterBar, DocumentUploader, FormField,
+│   │                 StatusBadge, InfoBanner
+│   ├── organisms/    MarketplaceGrid, InvestmentDetailPanel, ValidationQueue,
+│   │                 DocumentUploadZone, Navbar, Sidebar
+│   ├── templates/    AuthenticatedLayout, PublicLayout
+│   ├── pages/        LoginPage, MarketplacePage, InvestmentDetailPage,
+│   │                 DocumentUploadPage, ExpertValidationPage
+│   ├── hooks/        useApplicationServices, useAuth, useMarketplace,
+│   │                 useDocumentUpload, useCertificationProgress,
+│   │                 useExpertValidation, useInvestmentDetail,
+│   │                 usePermissions, usePolicies, useSession
+│   ├── i18n/         config.ts, I18nProvider.tsx, en.json, es.json
+│   └── styles/       tokens.ts, theme.ts, breakpoints.ts, globals.css, ThemeProvider.tsx
+│
+├── auth/
+│   ├── AuthFacade.ts · AuthMiddleware.ts · AuthAuditQueue.ts · authConfig.ts
+│   ├── adapters/     MicrosoftProfileAdapter.ts
+│   ├── guards/       AuthGuard.tsx, GuestGuard.tsx, PolicyGuard.tsx
+│   └── policies/     roles.ts, permissions.ts, rolePermissions.ts, accessPolicy.ts
+│
+├── polling/
+│   ├── PollingOrchestrator.ts
+│   └── strategies/   IPollingStrategy.ts, FixedIntervalStrategy.ts, ExponentialBackoffStrategy.ts
+│
+├── services/         applicationFacade.ts, client.ts, httpInterceptors.ts,
+│                     MarketplaceService.ts, TrustRecordService.ts,
+│                     ExpertValidationService.ts, InvestmentService.ts
+│
+├── state/
+│   ├── certification.types.ts, certificationPollingStore.ts, certificationPollingManager.ts
+│   ├── session.types.ts, sessionManager.ts, SessionProvider.tsx
+│   ├── StoreProvider.tsx, store.ts, hooks.ts
+│   └── slices/       authSlice.ts, marketplaceSlice.ts, certificationSlice.ts, validationSlice.ts
+│
+├── contracts/        openapi.json, openapi.example.json
+├── models/           api.types.ts (generated), SME.ts, TrustRecord.ts, DocumentUpload.ts, …
+├── validation/       documentUploadSchema.ts, smeSchema.ts, trustRecordSchema.ts, userSchema.ts, index.ts
+├── settings/         Settings.ts
+├── utils/            logger.ts, error-handler.ts, eventBus.ts, schemaValidator.ts, constants.ts, formatters.ts
+├── assets/logo/      logo-dark.svg, logo-light.svg
+├── __tests__/        setup.ts, unit/, e2e/, fixtures/, mocks/
+│
+├── next.config.ts · tailwind.config.ts · tsconfig.json
+├── jest.config.ts · playwright.config.ts · package.json
+├── .env.example · .eslintrc.json · .prettierrc · .lintstagedrc.json
+└── .husky/pre-commit
 ```
 
-### C4 Level 2 — Container Diagram
+---
 
-```mermaid
-C4Container
-    title QuietWealth Frontend Ecosystem
+# 14. Design patterns
 
-    Person(user, "Investor / SME Owner / Expert")
+Each pattern is documented with the same elements: where it is used, the problem it solves, how it is applied, its source files, a class diagram, the constraint it imposes, and how it handles exceptions.
 
-    Container(frontend, "QuietWealth Frontend", "Next.js 15 + React 19", "SSR web application")
-    Container(api, "QuietWealth API", ".NET", "Business services and data access")
+## 14.1 Singleton — shared technical services
 
-    System_Ext(auth0, "Auth0", "OIDC authentication")
-    System_Ext(keyvault, "Azure Key Vault", "Secrets management")
-    System_Ext(appinsights, "Application Insights", "Telemetry and monitoring")
+Logger, error handler, session manager, and the auth facade each exist as a single shared instance. Without this, multiple instances would produce inconsistent sessions, duplicated logs, and divergent error mappings. The pattern is applied through a private constructor and a static `getInstance()`, with the ready-made instance exported. The exported instance is used everywhere (`logger`, `exceptionHandler`, `authFacade`); `new` is never called. These services map errors to user-safe objects rather than throwing raw technical errors at the UI.
 
-    Rel(user, frontend, "Uses")
-    Rel(frontend, auth0, "Authenticate via OIDC")
-    Rel(frontend, api, "HTTPS REST API")
-    Rel(api, keyvault, "Reads secrets")
-    Rel(frontend, appinsights, "Sends telemetry")
-    Rel(api, appinsights, "Sends telemetry")
+Source: `app/utils/logger.ts`, `app/utils/error-handler.ts`, `app/state/sessionManager.ts`, `app/auth/AuthFacade.ts`.
+
+```ts
+export class Logger {
+  private static instance: Logger | null = null;
+  static getInstance(): Logger {
+    if (!Logger.instance) Logger.instance = new Logger();
+    return Logger.instance;
+  }
+  private constructor() {}
+}
+export const logger = Logger.getInstance();
 ```
 
-### C4 Level 3 — Frontend Component Diagram
+## 14.2 Facade — authentication and application services
 
-```mermaid
-C4Component
-    title QuietWealth Frontend Components
+Authentication and protected API access are complex enough that, without a facade, pages would wire up Auth0 and Axios directly and duplicate auth logic. `AuthFacade` and `ApplicationServiceFacade` are the only entry points, reached by hooks through `useApplicationServices()`. Pages and components call hooks only and never instantiate Auth0 or Axios clients. `AuthFacade` catches Auth0 errors and delegates them to `ExceptionHandler`, and failures are recorded through `AuthAuditQueue`.
 
-    Container_Boundary(frontend, "Next.js Frontend") {
-        Component(ui, "Pages & Components", "React", "Presentation layer")
-        Component(hooks, "Feature Hooks", "TypeScript", "Use cases and orchestration")
-        Component(state, "Redux Store", "Redux Toolkit", "Application state")
-        Component(services, "Application Services", "Axios", "API communication")
-        Component(auth, "AuthFacade", "OIDC", "Authentication and authorization")
-        Component(polling, "PollingOrchestrator", "TypeScript", "Long-running workflows")
-        Component(validation, "Zod Schemas", "Zod", "Runtime contract validation")
-        Component(errors, "ExceptionHandler", "TypeScript", "Error handling")
-    }
-
-    Rel(ui, hooks, "Calls")
-    Rel(hooks, state, "Reads/Writes")
-    Rel(hooks, services, "Uses")
-    Rel(services, validation, "Validates responses")
-    Rel(services, errors, "Reports failures")
-    Rel(hooks, auth, "Checks permissions")
-    Rel(hooks, polling, "Starts/Stops polling")
-```
-
-### C4 Level 4 — Auth and Security Code Diagram
+Source: `app/auth/AuthFacade.ts`, `app/services/applicationFacade.ts`, `app/components/hooks/useApplicationServices.ts`.
 
 ```mermaid
 classDiagram
-direction TB
-
 class AuthFacade {
   <<Facade + Singleton>>
-  -auth0Client
-  -sessionManager
-  -profileAdapter
-  -auditQueue
-  +getInstance() AuthFacade
   +login() Promise~void~
   +logout() Promise~void~
   +getAccessToken() Promise~string~
   +getSession() UserSessionDTO
 }
+class ApplicationServiceFacade {
+  <<Facade>>
+  +auth AuthServiceFacade
+  +http HttpClientFacade
+  +marketplace MarketplaceService
+  +trustRecord TrustRecordService
+}
+class useApplicationServices {
+  <<Hook>>
+}
+useApplicationServices --> ApplicationServiceFacade
+ApplicationServiceFacade --> AuthFacade
+```
 
+## 14.3 Adapter — Microsoft profile normalization
+
+Auth0/Entra ID claims do not match the internal session model. Without an adapter, provider-specific claim names such as `oid` and `preferred_username` would spread across the codebase. `MicrosoftProfileAdapter.adapt()` converts raw claims into a `UserSessionDTO`, and nothing else in the application sees claim shapes. Missing required claims raise a mapped auth-profile error that triggers session cleanup.
+
+Source: `app/auth/adapters/MicrosoftProfileAdapter.ts`, `app/state/session.types.ts`.
+
+```mermaid
+classDiagram
+class MicrosoftClaims {
+  +oid string
+  +preferred_username string
+  +name string
+  +exp number
+}
+class UserSessionDTO {
+  +userId string
+  +email string
+  +displayName string
+  +role RoleType
+  +expiresAt number
+}
+class MicrosoftProfileAdapter {
+  <<Adapter>>
+  +adapt(rawClaims) UserSessionDTO
+  -resolveRole(rawClaims) RoleType
+}
+MicrosoftProfileAdapter --> MicrosoftClaims
+MicrosoftProfileAdapter --> UserSessionDTO
+```
+
+## 14.4 Proxy — auth middleware
+
+Every protected API request needs token attachment and `401` handling. Without a proxy, each service would do this by hand, multiplying the chance of a mistake. `AuthMiddleware` sits between the services and the raw client, attaching the token and handling refresh and unauthorized cases. Services call `HttpClientFacade` and never attach bearer tokens themselves. A `401` triggers a silent refresh; a failed refresh clears the session and redirects to login.
+
+Source: `app/auth/AuthMiddleware.ts`, `app/services/client.ts`, `app/services/httpInterceptors.ts`.
+
+```mermaid
+classDiagram
+class HttpClientFacade {
+  +get(url, schema) Promise
+  +post(url, body, schema) Promise
+}
 class AuthMiddleware {
   <<Proxy>>
   -authFacade AuthFacade
-  -exceptionHandler ExceptionHandler
   +intercept(request) Promise~Request~
   -refreshTokenIfExpired() Promise~void~
   -handleUnauthorized() void
 }
-
-class MicrosoftProfileAdapter {
-  <<Adapter>>
-  +adapt(rawClaims MicrosoftClaims) UserSessionDTO
-  -resolveRole(rawClaims MicrosoftClaims) RoleType
+class BackendAPI {
+  <<External>>
 }
+HttpClientFacade --> AuthMiddleware
+AuthMiddleware --> BackendAPI
+```
 
+## 14.5 Observer — certification status tracking
+
+Certification progress is asynchronous and several UI sections react to it. Without the pattern, components would each run their own polling loop and drift out of sync. An observable store notifies its subscribers on every state change, and the UI subscribes through a single hook. Components subscribe via `useCertificationProgress()` and never run polling loops. Polling errors are mapped by `ExceptionHandler`; after five failures, polling stops and the UI shows a recoverable error.
+
+Source: `app/state/certificationPollingStore.ts`, `app/state/certificationPollingManager.ts`, `app/components/hooks/useCertificationProgress.ts`.
+
+```mermaid
+classDiagram
+class CertificationPollingStore {
+  -state CertificationState
+  -listeners Set~Listener~
+  +getState() CertificationState
+  +subscribe(listener) Unsubscribe
+  +patchState(partial) void
+}
+class CertificationPollingManager {
+  +startPolling(applicationId) void
+  +stopPolling(applicationId) void
+  +getSnapshot() CertificationState
+  +subscribe(listener) Unsubscribe
+}
+class useCertificationProgress {
+  <<Hook>>
+}
+CertificationPollingManager --> CertificationPollingStore
+useCertificationProgress --> CertificationPollingManager
+```
+
+## 14.6 Strategy — polling interval selection
+
+Normal polling and error polling need different timing. Without the pattern, timing rules would be hardcoded `if/else` blocks inside the orchestrator. `IPollingStrategy` has two implementations — fixed interval for normal operation and exponential backoff on errors — and the orchestrator swaps between them. A new timing policy implements `IPollingStrategy` rather than editing the orchestrator with inline timing. Network errors switch to backoff; after the retry cap, polling stops and logs `CertificationPollingFailed`.
+
+Source: `app/polling/strategies/IPollingStrategy.ts`, `FixedIntervalStrategy.ts`, `ExponentialBackoffStrategy.ts`, `app/polling/PollingOrchestrator.ts`.
+
+```mermaid
+classDiagram
+class IPollingStrategy {
+  <<interface>>
+  +getInterval(attempt) number
+}
+class FixedIntervalStrategy {
+  +getInterval(attempt) number
+}
+class ExponentialBackoffStrategy {
+  +getInterval(attempt) number
+}
+class PollingOrchestrator {
+  -strategy IPollingStrategy
+  +start(applicationId) void
+  +stop(applicationId) void
+}
+IPollingStrategy <|.. FixedIntervalStrategy
+IPollingStrategy <|.. ExponentialBackoffStrategy
+PollingOrchestrator --> IPollingStrategy
+```
+
+## 14.7 Queue-based logging — auth audit events
+
+Login, logout, refresh, and permission-denial events must be recorded without slowing authentication. Without the pattern, a synchronous telemetry call during login would add latency. Auth events are enqueued and flushed asynchronously to Application Insights. Auth events are enqueued rather than sent directly from UI components. A failed flush is retried silently and never breaks login or logout.
+
+Source: `app/auth/AuthAuditQueue.ts`, `app/utils/logger.ts`.
+
+```mermaid
+classDiagram
 class AuthAuditQueue {
-  <<Queue-Based Logging>>
   -queue AuthEvent[]
-  +enqueue(event AuthEvent) void
+  +enqueue(event) void
   -flush() Promise~void~
 }
-
-class SessionManager {
-  <<Singleton>>
-  -session UserSessionDTO
-  +setSession(session) void
-  +clearSession() void
-  +handleUnauthorized() void
-  +getSession() UserSessionDTO
-}
-
-class AuthGuard {
-  <<Route Guard>>
-  +render(children) ReactNode
-}
-
-class GuestGuard {
-  <<Route Guard>>
-  +render(children) ReactNode
-}
-
-class PolicyGuard {
-  <<Route Guard>>
-  +required PermissionCode[]
-  +render(children) ReactNode
-}
-
-class AccessPolicy {
-  <<Policy Map>>
-  +canBrowseMarketplace PermissionCode[]
-  +canViewInvestmentDetail PermissionCode[]
-  +canUploadDocuments PermissionCode[]
-  +canAccessValidationQueue PermissionCode[]
-  +canCertifySME PermissionCode[]
-  +canManageSystem PermissionCode[]
-}
-
-class RolePermissions {
-  <<Permission Mapping>>
-  +investor PermissionCode[]
-  +sme_owner PermissionCode[]
-  +financial_analyst PermissionCode[]
-  +sys_admin PermissionCode[]
-}
-
-class UsePolicies {
-  <<Hook>>
-  +hasAccess(policyName) boolean
-  +hasSomeAccess(policyName) boolean
-  +getMissingPermissions(policyName) PermissionCode[]
-}
-
-class HttpClientFacade {
-  <<Facade>>
-  +get(url, schema) Promise
-  +post(url, body, schema) Promise
-  +put(url, body, schema) Promise
-  +delete(url, schema) Promise
-}
-
 class Logger {
-  <<Singleton>>
   +info(event, metadata) void
-  +warn(event, metadata) void
   +error(event, metadata) void
   -redactSensitiveKeys(metadata) object
 }
-
-class ExceptionHandler {
-  <<Singleton>>
-  +handle(error) UserFacingError
-  +mapStatusCode(status) string
+class ApplicationInsights {
+  <<External>>
 }
-
-AuthFacade --> MicrosoftProfileAdapter
-AuthFacade --> AuthAuditQueue
-AuthFacade --> SessionManager
-AuthMiddleware --> AuthFacade
-AuthMiddleware --> ExceptionHandler
-AuthGuard --> SessionManager
-GuestGuard --> SessionManager
-PolicyGuard --> UsePolicies
-UsePolicies --> AccessPolicy
-UsePolicies --> RolePermissions
-HttpClientFacade --> AuthMiddleware
-HttpClientFacade --> ExceptionHandler
 AuthAuditQueue --> Logger
-ExceptionHandler --> Logger
-```
-
-### Context Diagram
-
-QuietWealth serves three primary actors: SME owners submit financial documents, financial analysts review and certify submissions, and investors browse certified SMEs. Identity is delegated to **Auth0** federating exclusively with **Microsoft Entra ID**.
-
-```mermaid
-graph TB
-    SME(["👤 SME Owner\nUploads documents, tracks certification"])
-    FA(["👤 Financial Analyst\nReviews and certifies SME applications"])
-    INV(["👤 Investor\nBrowses marketplace, views investment details"])
-    SA(["👤 SYS ADMIN\nSystem configuration"])
-
-    subgraph QW["🖥️ QuietWealth System"]
-        FE["Frontend\nReact SSR / Node.js\nAzure App Service"]
-        BE["Backend API\n(separate service)"]
-    end
-
-    AUTH0(["🔐 Auth0\nIdentity Broker\nMicrosoft Entra ID"])
-    MSFT(["🟦 Microsoft Entra ID"])
-
-    SME -->|"HTTPS — uploads docs, tracks status"| FE
-    FA  -->|"HTTPS — reviews certification queue"| FE
-    INV -->|"HTTPS — browses marketplace"| FE
-    SA  -->|"HTTPS — configuration"| FE
-    FE  <-->|"HTTPS / REST + Bearer JWT"| BE
-    FE  -->|"OAuth 2.0 PKCE / OIDC"| AUTH0
-    AUTH0 -->|"Federation"| MSFT
-```
-
-### Container Diagram
-
-```mermaid
-graph TB
-    Browser(["Web Browser\nReact SSR — Node.js 22 / Next.js 15\nAzure App Service"])
-
-    subgraph Azure["Azure Cloud"]
-        CDN["Azure CDN\n— Static asset distribution\n— Cache-Control headers"]
-
-        subgraph FrontendApp["Frontend — Next.js 15 / Node.js 22 · Azure App Service"]
-            AuthLayer["Auth Layer\nAuthFacade · AuthMiddleware\nMicrosoftProfileAdapter · AuditQueue"]
-            UILayer["Components Layer\nAtomic Design — Atoms → Pages\nMarketplace · Upload · Validation · Detail"]
-            ServicesLayer["Services Layer\nMarketplaceService · TrustRecordService\nExpertValidationService · InvestmentService"]
-            PollingLayer["Polling Layer\nPollingOrchestrator · Strategies"]
-            StateLayer["State Layer\nRedux — auth · marketplace · certification · validation"]
-        end
-
-        KeyVault["Azure Key Vault\nAuth0 secrets · API keys"]
-        AppIns["Azure Application Insights\nLogs · Metrics · Traces · Alerts"]
-    end
-
-    Auth0(["Auth0\nIdentity Broker\nMicrosoft Entra ID · OAuth 2.0 PKCE"])
-    BackendAPI(["Backend API\nTrust Record Compilation\n(separate service)"])
-
-    Browser -->|"HTTPS"| CDN
-    CDN --> FrontendApp
-    FrontendApp -->|"OAuth 2.0 PKCE"| Auth0
-    FrontendApp -->|"HTTPS / REST + Bearer JWT"| BackendAPI
-    FrontendApp -->|"Managed Identity"| KeyVault
-    FrontendApp -->|"OpenTelemetry SDK"| AppIns
+Logger --> ApplicationInsights
 ```
