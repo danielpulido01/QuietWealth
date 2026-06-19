@@ -1,4 +1,6 @@
 using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
 
@@ -19,6 +21,10 @@ public sealed class HealthEndpointsApiTests : IClassFixture<WebApplicationFactor
         var response = await client.GetAsync("/health/live");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        payload.GetProperty("status").GetString().Should().Be("Healthy");
+        payload.GetProperty("mode").GetString().Should().Be("local-mvp");
+        payload.GetProperty("checks").EnumerateArray().Should().ContainSingle();
     }
 
     [Fact]
@@ -27,5 +33,13 @@ public sealed class HealthEndpointsApiTests : IClassFixture<WebApplicationFactor
         var response = await client.GetAsync("/health/ready");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        payload.GetProperty("status").GetString().Should().Be("Healthy");
+        payload.GetProperty("mode").GetString().Should().Be("local-mvp");
+        payload.GetProperty("checks")
+            .EnumerateArray()
+            .Select(check => check.GetProperty("name").GetString())
+            .Should()
+            .Contain(["azure-sql-config", "blob-storage-config", "redis-config"]);
     }
 }

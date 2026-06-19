@@ -1,12 +1,12 @@
-using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Diagnostics.HealthChecks;
-using Microsoft.Extensions.Diagnostics.HealthChecks;
+using QuietWealth.Bakend.Shared.Api;
+using QuietWealth.Bakend.Shared.Diagnostics;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
-builder.Services.AddHealthChecks();
+builder.Services.AddQuietWealthHealthChecks(builder.Configuration);
 builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy
     .WithOrigins("http://localhost:3000", "http://127.0.0.1:3000")
     .AllowAnyHeader()
@@ -14,18 +14,15 @@ builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy
 builder.Services.AddSingleton<LocalMvpStore>();
 
 var app = builder.Build();
+app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseExceptionHandler();
 app.UseCors();
 app.MapControllers();
-app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false, ResponseWriter = WriteHealthResponseAsync });
-app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = _ => false, ResponseWriter = WriteHealthResponseAsync });
+app.MapHealthChecks("/health/live", HealthChecks.CreateLiveEndpointOptions());
+app.MapHealthChecks("/health/ready", HealthChecks.CreateReadyEndpointOptions());
 app.Run();
 
-static Task WriteHealthResponseAsync(HttpContext context, HealthReport report)
-{
-    context.Response.ContentType = "application/json";
-    return context.Response.WriteAsync(JsonSerializer.Serialize(new { status = "Healthy", mode = "local-mvp" }));
-}
+public partial class Program;
 
 public sealed class LocalMvpStore
 {
