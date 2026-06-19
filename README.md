@@ -29,7 +29,7 @@ The core problem lies in the absence of a transparent, unified platform where fi
 - State Management: Redux Toolkit 2.8
 - Data Validations: Zod 4.3.6
 - HTTP Client: Axios 1.9
-- Authentication: Auth0 + Microsoft Entra ID via backend-managed session cookies
+- Authentication: Auth0 React SDK 2.2 (OAuth 2.0 Authorization Code + PKCE)
 - Unit Testing: Jest version 30.2.0
 - Integration Testing: Playwright version 1.52
 - Code Prettier Framework: Prettier 3.8.1
@@ -204,7 +204,7 @@ Evaluate user ability to:
 The frontend follows an atomic design for component architecture.
 
 ### 1.3.2 Component Hierarchy
-[Components](/app/src/components)
+[Components](/app/components)
 
 Current component implementation uses 5 atomic UI layers plus shared support modules:
 ```
@@ -222,7 +222,7 @@ app/
 
 ### 1.3.3 Component Categories
 
-#### [Atoms](/app/src/components/atoms)
+#### [Atoms](/app/components/atoms)
 Reusable low-level UI components (no business logic)
 
 - Must be pure UI
@@ -250,7 +250,7 @@ Example usage:
 </Button>
 ```
 
-#### [Molecules](/app/src/components/molecules)
+#### [Molecules](/app/components/molecules)
 Built from primitives
 
 - Combine primitives
@@ -275,7 +275,7 @@ SMECard
  └ Button
 ```
 
-#### [Organisms](/app/src/components/organisms)
+#### [Organisms](/app/components/organisms)
 Components responsible for larger layout composition and section structure.
 
 - Must not contain business logic
@@ -298,7 +298,7 @@ InvestmentDetailPanel
  └ MaskedValue
 ```
 
-#### [Templates](/app/src/components/templates)
+#### [Templates](/app/components/templates)
 Layout shells
 
 - Wrap authenticated and public route layouts
@@ -309,10 +309,11 @@ AuthenticatedLayout
 PublicLayout
 ```
 
-#### [Pages](/app/src/components/pages)
+#### [Pages](/app/components/pages)
 Feature-specific components tied to a business process.
 
 - Coordinate business logic through hooks, which interact with services
+- Manage state
 - Compose composites + layouts
 - Are mounted by route definitions via Next.js App Router
 
@@ -324,38 +325,11 @@ DocumentUploadPage
 ExpertValidationPage
 ```
 
-### [Hooks](/app/src/components/hooks)
-Components use hooks for business logic.
-
-Example:
-```
-useApplicationServices()
-useLogin()
-useLogout()
-useMarketplace()
-useDocumentUpload()
-useCertificationProgress()
-useExpertValidation()
-useInvestmentDetail()
-usePermissions()
-usePolicies()
-useSession()
-useTheme()
-```
-
-Hooks use [Services](/app/src/services), [Auth service](/app/src/auth/authService.ts) and [State](/app/src/state) for orchestration:
-
-Example:
-```
-applicationFacade.ts
-CertificationPollingManager.ts
-```
-
 ### 1.3.4 Component Reuse Strategy
 
 Before creating a new component, developers must:
-1. Search in [Atoms](/app/src/components/atoms)
-2. Search in [Molecules](/app/src/components/molecules)
+1. Search in [Atoms](/app/components/atoms)
+2. Search in [Molecules](/app/components/molecules)
 
 If a similar component exists, extend it by adding props, variants, or composition instead of duplicating code.
 
@@ -367,8 +341,33 @@ Components must be configurable using props instead of duplication.
 <Button variant="danger" />
 ```
 
-### 1.3.5 [Styles](/app/src/components/styles)
-All visual styles must be centralized using design tokens in [tokens.ts](/app/src/components/styles/tokens.ts)
+#### [Hooks](/app/components/hooks)
+Components use hooks for business logic.
+
+Example:
+```
+useApplicationServices()
+useAuth()
+useMarketplace()
+useDocumentUpload()
+useCertificationProgress()
+useExpertValidation()
+useInvestmentDetail()
+usePermissions()
+usePolicies()
+useSession()
+```
+
+Hooks use [Services](/app/services), [Auth](/app/auth/AuthFacade.ts), and [State](/app/state) for orchestration:
+
+Example:
+```
+applicationFacade.ts
+CertificationPollingManager.ts
+```
+
+### 1.3.5 [Styles](/app/components/styles)
+All visual styles must be centralized using design tokens in [tokens.ts](/app/components/styles/tokens.ts)
 
 Example:
 ```TypeScript
@@ -396,7 +395,8 @@ export const radius = {
 }
 ```
 
-#### [Theme](/app/src/components/styles/theme.ts)
+#### [Theme](/app/components/styles/theme.ts)
+How do I switch dark/light mode? How do I add a new theme?
 
 Example:
 ```TypeScript
@@ -432,10 +432,10 @@ Certification status is communicated with both a color and a text label, never c
 ### 1.3.6 Internationalization Strategy
 All text must be externalized.
 
-#### [i18n](/app/src/components/i18n)
+#### [i18n](/app/components/i18n)
 Insert new languages in this folder:
-- [es](/app/src/components/i18n/es.json)
-- [en](/app/src/components/i18n/en.json)
+- [es](/app/components/i18n/es.json)
+- [en](/app/components/i18n/en.json)
 
 Example:
 ```JSON
@@ -469,7 +469,7 @@ const { t } = useTranslation()
 ```
 
 ### 1.3.7 Responsiveness Strategy
-Responsiveness must be centralized using breakpoint tokens in [breakpoints.ts](/app/src/components/styles/breakpoints.ts)
+Responsiveness must be centralized using breakpoint tokens in [breakpoints.ts](/app/components/styles/breakpoints.ts)
 
 Example:
 ```TypeScript
@@ -493,132 +493,34 @@ Developers must:
 | Desktop | 3-column grid | Full dual panel | Full sidebar |
 
 ### 1.3.8 Testing Requirements for Components
-Each component or testable frontend module must include automated tests.
+Each component must include tests.
 
-Verification commands:
-- `cd app && npm run test` runs the Jest unit suite without coverage.
-- `cd app && npm run test:ci` runs the Jest unit suite with the CI coverage gate from [jest.config](/app/jest.config.ts).
-- `cd app && npm run test:e2e` [Unit tests](/app/__tests__/e2e).
-
-
-#### [Unit tests](/app/__tests__/unit) (Jest)
+#### Unit tests (Jest)
 | Folder | Covers |
 |---|---|
-| `app/__tests__/unit/auth/` | `AuthProvider`, `AuthFacade`, `authService`, guards, permission helpers |
-| `app/__tests__/unit/polling/` | `PollingOrchestrator` placeholder coverage to expand once polling modules exist |
-| `app/__tests__/unit/services/` | Services and helpers with mocked `HttpClientFacade` or `axios` boundaries |
+| `app/__tests__/unit/auth/` | `AuthFacade`, guards, permission helpers, `MicrosoftProfileAdapter` |
+| `app/__tests__/unit/polling/` | `PollingOrchestrator` transitions, both strategies, terminal states |
+| `app/__tests__/unit/services/` | Services with a mocked `HttpClientFacade` |
 | `app/__tests__/unit/validation/` | Zod schemas — valid payloads pass, invalid ones fail with the expected shape |
 
-Real examples for how to build these tests live in [`app/TESTING.md`](/app/TESTING.md), including:
-- router-aware guard tests with `MemoryRouter`
-- service tests with mocked HTTP responses
-- Zod schema tests that assert `flatten().fieldErrors`
-- component test templates for render, loading, and click behavior
+Statement coverage holds at or above 80% on `app/auth/**`, `app/polling/**`, `app/services/**`, and `app/validation/**`, enforced as a CI gate.
 
-#### [Integration tests](/app/__tests__/e2e) (Playwright)
+Example tests:
+- Button renders correctly
+- Button shows loading state
+- Button triggers click handler
 
-Minimum required flows:
+#### Integration tests (Playwright)
+
+Required flows:
 | Flow | File |
 |---|---|
-| Login | [login.spec.ts](/app/__tests__/e2e/login.spec.ts) |
-| Marketplace | [marketplace.spec.ts](/app/__tests__/e2e/marketplace.spec.ts) |
-| Document upload | [document-upload.spec.ts](/app/__tests__/e2e/document-upload.spec.ts) |
-| Expert validation | [expert-validation.spec.ts](/app/__tests__/e2e/expert-validation.spec.ts) |
+| Login | `login.spec.ts` |
+| Marketplace | `marketplace.spec.ts` |
+| Document upload | `document-upload.spec.ts` |
+| Expert validation | `expert-validation.spec.ts` |
 
-
-The current files in `__tests__/e2e` are scaffolds with `test.describe.skip(...)`. Replace the placeholder body with a real flow when the screen exists.
-
-Before writing a flow:
-
-1. Start the app with a stable base URL.
-2. Seed or mock the backend response required for the journey.
-3. Use stable selectors such as `data-testid`.
-4. Assert both user-visible UI and route transitions.
-
-[Login](/app/__tests__/e2e/login.spec.ts):
-
-```ts
-import { expect, test } from "@playwright/test";
-
-test("authenticates a user and lands on the home route", async ({ page }) => {
-  await page.route("**/api/auth/login", async (route) => {
-    await route.fulfill({ status: 204, body: "" });
-  });
-
-  await page.route("**/api/auth/me", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        userId: "user-1",
-        email: "user@example.com",
-        tenantIds: [],
-        tenantRoles: [],
-      }),
-    });
-  });
-
-  await page.goto("/login");
-  await page.getByTestId("login-email").fill("user@example.com");
-  await page.getByTestId("login-password").fill("secret");
-  await page.getByRole("button", { name: "Sign in" }).click();
-
-  await expect(page).toHaveURL(/\/home$/);
-  await expect(page.getByText("user@example.com")).toBeVisible();
-});
-```
-
-#### [Component tests](/app/__tests__/unit/components)
-
-When a component is added, create the test in [components](/app/__tests__/unit/components) and follow the same Jest setup already used in this repo.
-
-Example:
-
-```tsx
-import { jest } from "@jest/globals";
-import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { Button } from "../../../src/components/primitives/Button";
-
-describe("Button", () => {
-  it("renders its label", () => {
-    render(<Button>Save</Button>);
-    expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
-  });
-
-  it("shows the loading state", () => {
-    render(<Button loading>Save</Button>);
-    expect(screen.getByRole("button")).toBeDisabled();
-    expect(screen.getByText("Loading...")).toBeInTheDocument();
-  });
-
-  it("triggers the click handler", async () => {
-    const user = userEvent.setup();
-    const onClick = jest.fn();
-
-    render(<Button onClick={onClick}>Save</Button>);
-    await user.click(screen.getByRole("button", { name: "Save" }));
-
-    expect(onClick).toHaveBeenCalledTimes(1);
-  });
-});
-```
-
-Prefer:
-- `getByRole` over brittle CSS selectors
-- `userEvent` over manual DOM event dispatch
-- visible behavior over implementation details
-
-
-#### Checklist For New Tests
-
-- Put the test beside the correct layer under `__tests__/unit` or `__tests__/e2e`.
-- Mock external boundaries such as HTTP, auth, router state, browser location, and time.
-- Add one happy-path assertion and at least one failure-path assertion.
-- Use stable selectors and visible behavior.
-- Run the narrowest command first, then `npm run test:ci` before merging Jest changes.
-
-### 1.3.9 Performance Guidelines
+#### Performance Guidelines
 Developers must:
 - Use `React.memo` for heavy components
 - Use `lazy()` for feature modules
@@ -658,35 +560,40 @@ export function AppRoutes() {
 ## 1.4 Security
 
 ### 1.4.1 Technologies
-- Auth0 with Microsoft Entra ID federation
+- Auth0 React SDK (OAuth 2.0 Authorization Code + PKCE)
+- Microsoft Entra ID (corporate IdP via Auth0 federation)
 - Zod (runtime validation)
 - Axios via `HttpClientFacade`
-- Secure `HttpOnly` session cookies managed by the backend
-- Context API and in-memory session state (`SessionProvider` + `sessionStore`)
+- JWT bearer tokens for protected API requests
 
 ### 1.4.2 Authentication
-Uses a backend-mediated Auth0 flow federated with Microsoft Entra ID.
+Uses Auth0 federated with Microsoft Entra ID.
 
 1. User selects "Continue with Microsoft".
-2. `AuthFacade.beginMicrosoftLogin()` redirects the browser to `/api/auth/microsoft/login`.
-3. The backend starts the Auth0 Universal Login flow and federates to Microsoft Entra ID.
-4. After the callback completes, the backend persists session state in secure cookies.
-5. The frontend calls `AuthFacade.getCurrentSession()` to hydrate in-memory session state.
-6. Protected API calls use `HttpClientFacade.authFetch()` with `withCredentials`.
-7. On `401`, the HTTP client attempts `/api/auth/refresh`; if that fails, the session is cleared and the user is redirected to login.
+2. `AuthFacade.login()` starts Auth0 Universal Login (Authorization Code + PKCE).
+3. Entra ID authenticates the user.
+4. Auth0 returns tokens to the callback.
+5. `MicrosoftProfileAdapter` normalizes raw claims into a `UserSessionDTO`.
+6. Session is held in memory only (`authSlice` in Redux).
+7. Protected API calls attach the access token through the HTTP interceptor.
 
-[AuthFacade.ts](/app/src/auth/AuthFacade.ts)
 ```TypeScript
-export type AuthFacade = AuthServiceFacade;
-export const authFacade: AuthFacade = authServiceFacade;
+// app/auth/AuthFacade.ts
+export class AuthFacade {
+  async login(): Promise<void> { /* starts Auth0 PKCE flow */ }
+  async logout(): Promise<void> { /* terminates session */ }
+  async getAccessToken(): Promise<string> { /* silent refresh */ }
+  getSession(): UserSessionDTO { /* returns in-memory session */ }
+}
+export const authFacade = AuthFacade.getInstance();
 ```
 
-The SPA never reads or stores bearer tokens directly. Session cookies stay `HttpOnly`, `Secure`, and same-site, while the frontend keeps only a normalized session snapshot in memory through `sessionStore` and `SessionProvider`.
+Access tokens stay in memory (Redux); the refresh token sits in an `HttpOnly`, `Secure`, `SameSite=Strict` cookie that JavaScript cannot read. MFA is enforced for all roles through Auth0 Adaptive MFA.
 
 ### 1.4.3 Authorization
 
 #### 1.4.3.1 Roles
-Roles are found in [roles.ts](/app/src/auth/policies/roles.ts)
+Roles are found in [roles.ts](/app/auth/policies/roles.ts)
 
 | Code | Description |
 |---|---|
@@ -696,7 +603,7 @@ Roles are found in [roles.ts](/app/src/auth/policies/roles.ts)
 | `sys_admin` | Full access to the platform, including user, role, and audit administration |
 
 #### 1.4.3.2 Permissions
-Permissions are found in [permissions.ts](/app/src/auth/policies/permissions.ts)
+Permissions are found in [permissions.ts](/app/auth/policies/permissions.ts)
 
 **Permission Catalog**
 | Code | Description |
@@ -711,7 +618,7 @@ Permissions are found in [permissions.ts](/app/src/auth/policies/permissions.ts)
 | `audit_log.read` | Admin can view the full system audit log |
 
 #### 1.4.3.3 Role-Permission Mapping
-Role to permissions mapping is found in [rolePermissions.ts](/app/src/auth/policies/rolePermissions.ts)
+Role to permissions mapping is found in [rolePermissions.ts](/app/auth/policies/rolePermissions.ts)
 
 | Role | Permissions |
 |---|---|
@@ -721,7 +628,7 @@ Role to permissions mapping is found in [rolePermissions.ts](/app/src/auth/polic
 | `sys_admin` | All permissions |
 
 #### 1.4.3.4 Access Policies
-Access Policies are found in [accessPolicy.ts](/app/src/auth/policies/accessPolicy.ts)
+Access Policies are found in [accessPolicy.ts](/app/auth/policies/accessPolicy.ts)
 
 | Policy | Required Permissions | Description |
 |---|---|---|
@@ -737,7 +644,7 @@ Access Policies are found in [accessPolicy.ts](/app/src/auth/policies/accessPoli
 #### 1.4.3.5 Routing Protection
 This project has three methods of routing protection.
 
-**[AuthGuard.tsx](/app/src/auth/guards/AuthGuard.tsx)**
+**[AuthGuard.tsx](/app/auth/guards/AuthGuard.tsx)**
 
 Use this guard to prevent unauthenticated access to specific routes.
 
@@ -750,7 +657,7 @@ Example usage:
 </AuthGuard>
 ```
 
-**[GuestGuard.tsx](/app/src/auth/guards/GuestGuard.tsx)**
+**[GuestGuard.tsx](/app/auth/guards/GuestGuard.tsx)**
 
 Use this guard to prevent authenticated users accessing unauthenticated sites.
 
@@ -761,7 +668,7 @@ Example usage:
 </GuestGuard>
 ```
 
-**[PolicyGuard.tsx](/app/src/auth/guards/PolicyGuard.tsx)**
+**[PolicyGuard.tsx](/app/auth/guards/PolicyGuard.tsx)**
 
 Use this guard when an entire route or page requires a specific access policy.
 
@@ -794,17 +701,17 @@ const { hasAccess } = usePolicies();
 
 **To add additional roles/permissions:**
 
-1. Add role definition in [roles.ts](/app/src/auth/policies/roles.ts)
-2. Add permission in [permissions.ts](/app/src/auth/policies/permissions.ts)
-3. Map policy to permissions in [accessPolicy.ts](/app/src/auth/policies/accessPolicy.ts)
+1. Add role definition in [roles.ts](/app/auth/policies/roles.ts)
+2. Add permission in [permissions.ts](/app/auth/policies/permissions.ts)
+3. Map policy to permissions in [accessPolicy.ts](/app/auth/policies/accessPolicy.ts)
 
 ### 1.4.4 API Communication
 
 #### Centralized API Client
-[client.ts](/app/src/services/client.ts)
+[client.ts](/app/services/client.ts)
 
 #### HTTP Interceptors
-[httpInterceptors.ts](/app/src/services/httpInterceptors.ts)
+[httpInterceptors.ts](/app/services/httpInterceptors.ts)
 
 ### 1.4.5 Storage Rules
 
@@ -818,43 +725,32 @@ const { hasAccess } = usePolicies();
 - Access tokens
 - Refresh tokens
 - Passwords
-- one-time tokens
 - Raw permission payloads if sensitive
 
 **Preferred storage model**
-- backend session stored in secure, HTTP-only, same-site cookies
-- frontend session state kept in memory through SessionProvider
-
-#### Examples
-```ts
-// Allowed: non-sensitive preferences
-localStorage.setItem("theme", "dark");
-localStorage.setItem("language", "en");
-
-// Forbidden: secrets
-// localStorage.setItem("accessToken", token);
-// localStorage.setItem("password", password);
-```
+- Access token stored in memory (Redux `authSlice`)
+- Refresh token in `HttpOnly`, `Secure`, `SameSite=Strict` cookie
+- Frontend session state kept in memory through `SessionProvider`
 
 **Enforcement**
-- Keep authentication credentials out of `localStorage` and `sessionStorage`.
+- Keep authentication credentials out of `localStorage` and `sessionStorage` — enforced by ESLint ban rule.
 - Clear in-memory session data on logout and on 401 responses.
 - Review pull requests for any usage of `localStorage` or `sessionStorage` with token-shaped keys.
 
 ### 1.4.6 Logout
 Responsibilities:
 - Call `AuthFacade.logout()`
-- Clear `sessionStore` / `SessionProvider` state
-- Clear any derived in-memory session data
+- Clear Redux `authSlice` session
+- Clear in-memory session data
 - Redirect to login
 
-[useLogout.ts](/app/src/components/hooks/useLogout.ts)
+[useAuth.ts](/app/components/hooks/useAuth.ts)
 
 ### 1.4.7 Session Expiration
 
 When the backend returns 401 Unauthorized:
-- `HttpClientFacade.authFetch()` detects it
-- Silent session refresh is attempted via `POST /api/auth/refresh`
+- HTTP interceptor detects it
+- Silent token refresh is attempted via `getAccessTokenSilently()`
 - If refresh fails, `sessionManager.handleUnauthorized()` clears the session
 - User is redirected to login with a session-expired message
 
@@ -862,29 +758,26 @@ When the backend returns 401 Unauthorized:
 
 The frontend uses a five-layer architecture with clear responsibilities and downward-only dependencies.
 
-**Architecture diagram:**
-![Layerd design diagram](Media/frontend-layerded-design.png)
+**Layer 1 — Presentation:** Pages and components render data and capture input. They do not call APIs directly. Next.js App Router and route guards protect navigation.
 
-**Layer 1 - Presentation:** Pages and components render data and capture input. They do not call APIs directly. React Router route guards protect navigation.
+**Layer 2 — Application:** Hooks orchestrate use cases end to end. Standard flow: validate input → call service → dispatch Redux actions.
 
-**Layer 2 - Application:** Hooks orchestrate use cases end to end. Standard flow: validate input -> call facade/service -> update session or feature state.
+**Layer 3 — Domain Logic:** Zod schemas validate every API response. Permission checks use `usePolicies()`, not direct role comparisons. Policies define roles and permissions.
 
-**Layer 3 - Domain Logic:** Zod schemas validate every API response. Permission checks use `usePolicies()`, not direct role comparisons. Policies define roles and permissions.
+**Layer 4 — Services:** `HttpClientFacade` and `AuthFacade` are the only network entry points. Services call the backend and Auth0; they render no UI.
 
-**Layer 4 - Services:** `HttpClientFacade` and `AuthFacade` are the only network entry points. Services call the backend, session endpoints, and auth redirect endpoints; they render no UI.
-
-**Layer 5 - Infrastructure:** Shared foundation: `sessionStore`, `SessionProvider`, design tokens, i18n, observability utilities.
+**Layer 5 — Infrastructure:** Shared foundation: Redux store, `SessionProvider`, design tokens, i18n, observability utilities.
 
 **Folder mapping:**
 
 | Folder | Layer | Purpose |
 |--------|-------|---------|
-| `app/src/components/pages/`, `app/**/page.tsx` | Layer 1 | Route entry points and feature screens |
-| `app/src/components/atoms/`, `molecules/`, `organisms/`, `templates/` | Layer 1 | Atomic UI components |
-| `app/src/components/hooks/` | Layer 2 | Application orchestration hooks |
-| `app/src/models/`, `app/src/validation/`, `app/src/auth/policies/` | Layer 3 | Domain types, Zod schemas, access policies |
-| `app/src/services/`, `app/src/auth/AuthFacade.ts`, `app/src/auth/authService.ts` | Layer 4 | HTTP facade, auth service, interceptors |
-| `app/src/state/`, `app/src/utils/`, `app/src/components/i18n/`, `app/src/components/styles/` | Layer 5 | Session store, logger, i18n, tokens |
+| `app/components/pages/`, `app/**/page.tsx` | Layer 1 | Route entry points and feature screens |
+| `app/components/atoms/`, `molecules/`, `organisms/`, `templates/` | Layer 1 | Atomic UI components |
+| `app/components/hooks/` | Layer 2 | Application orchestration hooks |
+| `app/models/`, `app/validation/`, `app/auth/policies/` | Layer 3 | Domain types, Zod schemas, access policies |
+| `app/services/`, `app/auth/AuthFacade.ts` | Layer 4 | HTTP facade, auth service, interceptors |
+| `app/state/`, `app/utils/`, `app/settings/`, `app/components/i18n/`, `app/components/styles/` | Layer 5 | Redux store, logger, settings, i18n, tokens |
 
 **Dependency rules:**
 - Presentation can only call Application (hooks) and Infrastructure.
@@ -893,25 +786,28 @@ The frontend uses a five-layer architecture with clear responsibilities and down
 - Services can only use Infrastructure.
 - **No layer may call upward.**
 
+<img width="1408" height="768" alt="Gemini_Generated_Image_cm3n28cm3n28cm3n" src="https://github.com/user-attachments/assets/2df99b1f-4c0f-4090-b4d4-e6dd446e3700" />
+
+
 **Example: Login flow**
 
-`LoginPage` -> `useLogin().login()` -> `applicationServiceFacade.auth.login()` -> `POST /api/auth/login` -> `AuthFacade.getCurrentSession()` -> `sessionManager.setSession()` -> `sessionStore` / `SessionProvider` update.
+`LoginPage` → `useAuth().login()` → `AuthFacade.login()` (Auth0 PKCE) → `MicrosoftProfileAdapter.adapt()` → `UserSessionDTO` → `SessionManager.setSession()` → Redux `authSlice` update.
 
 **Example: Certification polling flow**
 
-`DocumentUploadPage` -> `useCertificationProgress()` subscription -> `CertificationPollingManager.startPolling()` -> `PollingOrchestrator` -> `GET /api/trust-record-applications/{id}/status` -> `certificationPollingStore.patchState()` -> UI update.
+`DocumentUploadPage` → `useCertificationProgress()` subscription → `CertificationPollingManager.startPolling()` → `PollingOrchestrator` → `GET /api/trust-record-applications/{id}/status` → `certificationPollingStore.patchState()` → UI update.
 
 ## 1.6 Design patterns
 
 ### Singleton
 The following classes currently use the singleton pattern:
-- [logger.ts](/app/src/utils/logger.ts) — `Logger`
-- [error-handler.ts](/app/src/utils/error-handler.ts) — `ExceptionHandler`
-- [AuthFacade.ts](/app/src/auth/AuthFacade.ts) - `authFacade`
-- [sessionManager.ts](/app/src/state/sessionManager.ts) — `SessionManager`
-- [certificationPollingStore.ts](/app/src/state/certificationPollingStore.ts) — `CertificationPollingStore`
-- [certificationPollingManager.ts](/app/src/state/certificationPollingManager.ts) — `CertificationPollingManager`
-- [applicationFacade.ts](/app/src/services/applicationFacade.ts) — `ApplicationServiceFacade`
+- [logger.ts](/app/utils/logger.ts) — `Logger`
+- [error-handler.ts](/app/utils/error-handler.ts) — `ExceptionHandler`
+- [AuthFacade.ts](/app/auth/AuthFacade.ts) — `AuthFacade`
+- [sessionManager.ts](/app/state/sessionManager.ts) — `SessionManager`
+- [certificationPollingStore.ts](/app/state/certificationPollingStore.ts) — `CertificationPollingStore`
+- [certificationPollingManager.ts](/app/state/certificationPollingManager.ts) — `CertificationPollingManager`
+- [applicationFacade.ts](/app/services/applicationFacade.ts) — `ApplicationServiceFacade`
 
 #### When to apply here
 Apply only if all are true:
@@ -959,10 +855,10 @@ export const logger = Logger.getInstance();
 
 ### Observer
 Use these files as the canonical pattern:
-- [certification.types.ts](/app/src/state/certification.types.ts)
-- [certificationPollingStore.ts](/app/src/state/certificationPollingStore.ts)
-- [certificationPollingManager.ts](/app/src/state/certificationPollingManager.ts)
-- [useCertificationProgress.ts](/app/src/components/hooks/useCertificationProgress.ts)
+- [certification.types.ts](/app/state/certification.types.ts)
+- [certificationPollingStore.ts](/app/state/certificationPollingStore.ts)
+- [certificationPollingManager.ts](/app/state/certificationPollingManager.ts)
+- [useCertificationProgress.ts](/app/components/hooks/useCertificationProgress.ts)
 
 #### 1) State Contract (`*.types.ts`)
 Define progress phases, run state (`idle`, `running`, `completed`, etc.), progress snapshot shape, and `createInitial...State()` factory.
@@ -1004,54 +900,48 @@ class XStore {
 }
 ```
 
-### Proxy / Interceptor - Authenticated HTTP
-- [client.ts](/app/src/services/client.ts)
-- [httpInterceptors.ts](/app/src/services/httpInterceptors.ts)
-- [unauthorizedHandlingStrategy.ts](/app/src/services/unauthorizedHandlingStrategy.ts)
+### Proxy — Auth Middleware
+- [AuthFacade.ts](/app/auth/AuthFacade.ts)
+- [AuthMiddleware.ts](/app/auth/AuthMiddleware.ts)
+- [client.ts](/app/services/client.ts)
 
-Authenticated requests are centralized in the HTTP client. `authFetch()` performs cookie-based requests, retries once through `/api/auth/refresh` when configured, and delegates final `401` handling to the unauthorized-handling strategy.
+`AuthMiddleware` sits between services and the raw HTTP client, attaching the bearer token and handling 401 cases. Services call `HttpClientFacade` and never attach tokens themselves.
 
 ```ts
-class SourceHttpClient {
-  async authFetch(input: string, init?: RequestInit): Promise<Response> {
-    // Performs authenticated request, refreshes session on 401,
-    // then clears session and redirects if still unauthorized.
-  }
+class AuthMiddleware {
+  // <<Proxy>>
+  async intercept(request: Request): Promise<Request> { /* attaches token */ }
+  private async refreshTokenIfExpired(): Promise<void> { /* silent refresh */ }
+  private handleUnauthorized(): void { /* clears session, redirects */ }
 }
 ```
 
-### Facade Pattern (Hooks -> Auth + HTTP)
+### Facade Pattern (Hooks → Auth + HTTP)
 Expose a single service access surface for hooks while keeping auth and HTTP implementation details behind facades.
 
 #### Files to keep aligned
-- [client.ts](/app/src/services/client.ts)
-- [AuthFacade.ts](/app/src/auth/AuthFacade.ts)
-- [authService.ts](/app/src/auth/authService.ts)
-- [applicationFacade.ts](/app/src/services/applicationFacade.ts)
-- [useApplicationServices.ts](/app/src/components/hooks/useApplicationServices.ts)
+- [client.ts](/app/services/client.ts)
+- [AuthFacade.ts](/app/auth/AuthFacade.ts)
+- [applicationFacade.ts](/app/services/applicationFacade.ts)
+- [useApplicationServices.ts](/app/components/hooks/useApplicationServices.ts)
 
 #### Contracts
 
 HTTP facade contract:
 ```ts
 export interface HttpClientFacade {
-  fetch(input: string, init?: RequestInit): Promise<Response>;
-  authFetch(input: string, init?: RequestInit): Promise<Response>;
-  json<T>(input: string, init?: RequestInit): Promise<T>;
-  authJson<T>(input: string, init?: RequestInit): Promise<T>;
+  get<T>(url: string, schema: ZodSchema<T>): Promise<T>;
+  post<T>(url: string, body: unknown, schema: ZodSchema<T>): Promise<T>;
 }
 ```
 
 Auth facade contract:
 ```ts
 export interface AuthFacade {
-  login(input: LoginInput): Promise<AuthSession | null>;
+  login(): Promise<void>;
   logout(): Promise<void>;
-  beginMicrosoftLogin(returnUrl?: string): void;
-  refreshSession(): Promise<AuthSession | null>;
-  requestPasswordReset(email: string, redirectTo?: string): Promise<void>;
-  resetPassword(accessToken: string, refreshToken: string, newPassword: string): Promise<void>;
-  getCurrentSession(): Promise<AuthSession | null>;
+  getAccessToken(): Promise<string>;
+  getSession(): UserSessionDTO;
 }
 ```
 
@@ -1060,16 +950,18 @@ App facade contract:
 export interface ApplicationServiceFacade {
   readonly auth: AuthFacade;
   readonly http: HttpClientFacade;
+  readonly marketplace: MarketplaceService;
+  readonly trustRecord: TrustRecordService;
 }
 ```
 
 #### Checklist for New Agents
 - Hooks import only `useApplicationServices` for service access.
-- `AuthFacade` is the only frontend auth entry point.
+- `AuthFacade` is the only Auth0 entry point.
 - `HttpClientFacade` is the only Axios/fetch entry point.
-- New features are added by extending facades, not by importing Axios or hard-coding auth redirects directly in hooks.
+- New features are added by extending facades, not by importing Auth0 or Axios directly in hooks.
 
-### Strategy ? Polling Interval Selection
+### Strategy — Polling Interval Selection
 [IPollingStrategy.ts](/app/polling/strategies/IPollingStrategy.ts), [FixedIntervalStrategy.ts](/app/polling/strategies/FixedIntervalStrategy.ts), [ExponentialBackoffStrategy.ts](/app/polling/strategies/ExponentialBackoffStrategy.ts), [PollingOrchestrator.ts](/app/polling/PollingOrchestrator.ts)
 
 ```ts
@@ -1085,7 +977,7 @@ class ExponentialBackoffStrategy implements IPollingStrategy {
 ```
 
 ### Queue-based logging — Auth Audit Events
-[AuthAuditQueue.ts](/app/src/auth/AuthAuditQueue.ts)
+[AuthAuditQueue.ts](/app/auth/AuthAuditQueue.ts)
 
 Auth events (login, logout, refresh, permission denial) are enqueued and flushed asynchronously to Application Insights, avoiding latency during authentication.
 
@@ -1106,7 +998,7 @@ class AuthAuditQueue {
 The `/app` folder contains the application scaffold organized by architectural layers and functional domains, following the 5-layer architecture specified in sections 1.1 to 1.6.
 
 ```txt
-src/
+app/
 ├── layout.tsx · page.tsx · globals.css
 ├── login/page.tsx
 ├── marketplace/page.tsx
@@ -1125,14 +1017,16 @@ src/
 │   ├── templates/    AuthenticatedLayout, PublicLayout
 │   ├── pages/        LoginPage, MarketplacePage, InvestmentDetailPage,
 │   │                 DocumentUploadPage, ExpertValidationPage
-|   |-- hooks/        useApplicationServices, useLogin, useLogout,
-|   |                 usePermissions, usePolicies, useSession,
-|   |                 useTheme
+│   ├── hooks/        useApplicationServices, useAuth, useMarketplace,
+│   │                 useDocumentUpload, useCertificationProgress,
+│   │                 useExpertValidation, useInvestmentDetail,
+│   │                 usePermissions, usePolicies, useSession
 │   ├── i18n/         config.ts, I18nProvider.tsx, en.json, es.json
 │   └── styles/       tokens.ts, theme.ts, breakpoints.ts, globals.css, ThemeProvider.tsx
 │
 ├── auth/
-|   |-- AuthFacade.ts, authService.ts, auth-schemas.ts, AuthProvider.tsx
+│   ├── AuthFacade.ts · AuthMiddleware.ts · AuthAuditQueue.ts · authConfig.ts
+│   ├── adapters/     MicrosoftProfileAdapter.ts
 │   ├── guards/       AuthGuard.tsx, GuestGuard.tsx, PolicyGuard.tsx
 │   └── policies/     roles.ts, permissions.ts, rolePermissions.ts, accessPolicy.ts
 │
@@ -1147,7 +1041,8 @@ src/
 ├── state/
 │   ├── certification.types.ts, certificationPollingStore.ts, certificationPollingManager.ts
 │   ├── session.types.ts, sessionManager.ts, SessionProvider.tsx
-|   |-- sessionStore.ts
+│   ├── StoreProvider.tsx, store.ts, hooks.ts
+│   └── slices/       authSlice.ts, marketplaceSlice.ts, certificationSlice.ts, validationSlice.ts
 │
 ├── contracts/        openapi.json, openapi.example.json
 ├── models/           api.types.ts (generated), SME.ts, TrustRecord.ts, DocumentUpload.ts, …
@@ -1174,7 +1069,7 @@ src/
 - File storage: Azure Blob Storage
 - Blob archival: Azure Blob Lifecycle Management for Cool, Cold, and Archive tier transitions
 - SQL archival orchestration: Scheduled Azure Function export process
-- Cache: Azure Cache Redis
+- Cache: Azure Managed Redis
 - Asynchronous document processing: Azure Blob Storage events via Azure Event Grid, Azure Queue Storage, and Azure Function Queue Trigger
 - Notifications: Azure Notification Hubs
 - Load balancing: no dedicated load balancer required for the expected traffic profile
@@ -1196,23 +1091,24 @@ src/
   - Document intake service
   - Certification validation service
   - Marketplace read service
-  - Investment detail service
   - Audit observability service
-  - Retention archival service 
+  - Retention archival service
+  - <<Agregar otros servicios si el MVP los requiere>>
 
 ## Security
 - Transport security: HTTPS enforced at Azure API Management for all public endpoints
 - Authentication:
   - Users authenticate through Auth0 Universal Login federated with Microsoft Entra ID
-  - The backend owns the session and issues secure `HttpOnly` cookies to the browser
-  - Frontend requests use `withCredentials`; the SPA does not persist or attach bearer tokens directly
-  - Client secrets are never returned to the browser
+  - The backend validates JWT bearer tokens issued for the configured Auth0 audience
+  - JWT signing algorithm: RS256
+  - JWT tokens are required for all protected endpoints
+  - Client secrets are never embedded in JWTs or returned to the browser
 - Encryption at rest:
   - Azure SQL Database uses Transparent Data Encryption (TDE) with service-managed keys
   - Reference: https://learn.microsoft.com/en-us/azure/azure-sql/database/security-overview?view=azuresql#transparent-data-encryption-encryption-at-rest-with-service-managed-keys
 - Request payload limits:
   - General API payload limit: 10 MB
-  - File upload endpoints exception: up to 10 MB per request to support realistic document sets with multiple PDF, Excel, Word, and scanned image files
+  - File upload endpoints exception: up to 100 MB per request to support realistic document sets with multiple PDF, Excel, Word, and scanned image files
   - Requests above these limits must be rejected with a clear validation error
 - Rate limiting at Azure API Management:
   - Maximum concurrent connections per authenticated client: 10
@@ -1221,7 +1117,7 @@ src/
 - Data retention and archiving:
   - Production operational data and generated files remain in the active production environment for 90 days
   - After 90 days, records and generated artifacts are moved to an archive tier for audit and traceability purposes
-  - Archived data is retained according to financial compliance requirements
+  - Archived data is retained according to institutional or customs compliance requirements
 
 ## Observability
 - Telemetry platform: Azure Application Insights, aligned with the frontend for unified end-to-end telemetry
@@ -1231,15 +1127,16 @@ src/
   - AuthLoginSucceeded
   - AuthLoginFailed
   - UserLoggedOut
-  - FilesUploadStarted
-  - FilesUploadCompleted
-  - FilesUploadRejected
+  - FileUploadStarted
+  - FileUploadCompleted
+  - FileUploadRejected
   - SupportedFilesValidated
   - CertificationReviewRequested
   - CertificationApproved
   - CertificationRejected
   - MarketplaceListingViewed
   - RecordsArchived
+  - <<Agregar otros eventos de negocio>>
   - ApiRequestFailed
   - UnhandledExceptionCaptured
 - Progress polling guideline: do not log every frontend polling request; log only meaningful status transitions and exceptional progress-check failures
@@ -1258,6 +1155,8 @@ src/
 - SLIs defined from design: availability and latency SLIs must be defined at architecture stage for each critical user flow.
 
 ## Infrastructure (DevOps)
+<<Falta validar scripts finales de provisioning para CI/CD>>
+<<Podemos agregar reglas definitivas de branching y protección de ramas>>
 
 ### CI/CD orchestration tool
 - Standard tool: **GitHub Actions** (single CI/CD control plane from this monorepo).
@@ -1564,7 +1463,7 @@ With the most recent official SLA (April 8, 2026) for your stack:
 | API App Service | CPU > 70% for 10 min OR memory > 75% for 10 min OR API P95 latency > 800 ms for 10 min | CPU < 40% AND memory < 55% AND P95 latency < 400 ms for 30 min | 2 | 6 | 10 min |
 | Document Azure Functions | Queue depth > 100 messages OR oldest message age > 60 s | Queue depth < 20 messages AND oldest message age < 15 s for 15 min | 1 | 10 | 5 min |
 
-If the API reaches 6 instances and P95 stays above 1.5 s for 15 min, scale the App Service Plan from B1 to P1v3.
+If the API reaches 6 instances and P95 stays above 1.5 s for 15 min, scale the App Service Plan from B1 to P1v3. <<Validate P1v3 budget with professor>>
 
 ### Stateless API
 
@@ -1601,7 +1500,7 @@ Marketplace cache TTL: 5 min. Invalidate keys when certification status or marke
 
 | Stage | Scaling rule | Failure behavior |
 |---|---|---|
-| React direct upload to Blob | SAS expires after 15 min; max file size 10 MB/request | Expired SAS requires a new upload permission request |
+| React direct upload to Blob | SAS expires after 15 min; max file size 100 MB/request | Expired SAS requires a new upload permission request |
 | Event Grid | One Blob-created event per uploaded file | Failed delivery retries for 24 h, then logs operational incident |
 | Azure Queue Storage | Queue absorbs upload bursts; alert at > 1,000 pending messages | Upload remains `Pending`; UI shows delayed processing |
 | Azure Function Queue Trigger | Batch size 16, max 10 instances, max 160 concurrent messages | Retry 5 times; poison message sets document status to `Failed` |
@@ -1625,602 +1524,7 @@ Marketplace cache TTL: 5 min. Invalidate keys when certification status or marke
 | 100x | Split marketplace read model from transactional SQL, partition document queues by tenant, use Azure Functions Premium plan, add Redis clustering, move APIM to Premium multi-region |
 
 
-## Backend Error Handling Standard
-
-### Standard response contract
-
-#### Success responses
-
-All successful responses with a body must use a shared envelope:
-
-```json
-{
-  "data": {},
-  "correlationId": "01JZ2JQ7HY7CF6J9P9M6S7Q0ZK"
-}
-```
-
-Standard shape is found in [ApiResponse.cs](server/QuietWealth.Backend/shared/Api/ApiResponse.cs):
-```csharp
-namespace QuietWealth.Bakend.Shared.Api;
-
-public sealed record ApiResponse<T>(T Data, string CorrelationId);
-```
-
-Rules:
-- `200 OK`, `201 Created`, and `202 Accepted` return `ApiResponse<T>`.
-- `204 No Content` returns no body.
-- `X-Correlation-Id` must also be returned as a response header.
-
-#### Error responses
-
-All error responses must use RFC 7807 `ProblemDetails` with extensions.
-
-Content type:
-```text
-application/problem+json
-```
-
-Base shape:
-```json
-{
-  "type": "https://api.quietwealth/errors/domain-rule-violation",
-  "title": "Domain rule violated",
-  "status": 409,
-  "detail": "The document batch cannot be archived because it is still processing.",
-  "instance": "/api/retention/archive",
-  "correlationId": "01JZ2JQ7HY7CF6J9P9M6S7Q0ZK",
-  "errorCode": "retention.batch_processing",
-  "category": "domain"
-}
-```
-
-Required extension fields:
-- `correlationId`: stable per request, also returned in `X-Correlation-Id`
-- `errorCode`: stable machine-readable code owned by the domain or shared layer
-- `category`: `validation`, `domain`, `infrastructure`, `authorization`, `not-found`, `conflict`, or `unexpected`
-
-Optional extension fields:
-- `errors`: validation dictionary for field-level failures
-- `retryable`: `true` for transient infrastructure failures
-
-Do not include:
-- stack traces
-- SQL errors
-- blob paths
-- connection strings
-- raw vendor exception messages
-- secrets, tokens, or internal identifiers that are not safe for clients
-
-#### Correlation ID rules
-
-Each request must have a correlation ID.
-Rules:
-- Read `X-Correlation-Id` from the incoming request if present and valid.
-- If it is missing, generate one in middleware.
-- Store it in `HttpContext.Items` or a scoped accessor.
-- Return it in:
-  - `X-Correlation-Id` response header
-  - every `ApiResponse<T>`
-  - every `ProblemDetails` payload
-- Include it in structured logs and dependency telemetry.
-- Reuse the same value when publishing domain events or outbox messages triggered by the request.
-- `correlationId` is the business-visible identifier for support and debugging.
-- `traceId` may still exist in telemetry, but clients should rely on `correlationId`.
-
-### Error categories and HTTP mapping
-
-#### Validation errors
-
-Use for:
-- malformed JSON
-- missing required fields
-- invalid enum values
-- length, range, format, and schema violations
-- request DTO validation failures
-
-HTTP status:
-- `400 Bad Request`
-
-Payload:
-- `ValidationProblemDetails`
-- must include `correlationId`, `errorCode`, and `category = "validation"`
-- must include `errors`
-
-Example:
-
-```json
-{
-  "type": "https://api.quietwealth/errors/validation",
-  "title": "One or more validation errors occurred.",
-  "status": 400,
-  "correlationId": "01JZ2JQ7HY7CF6J9P9M6S7Q0ZK",
-  "errorCode": "validation.failed",
-  "category": "validation",
-  "errors": {
-    "fileNames": [
-      "At least one file is required."
-    ],
-    "ownerUserId": [
-      "The owner user id field is required."
-    ]
-  }
-}
-```
-
-#### Domain errors
-Use for business rules owned by a bounded context.
-
-Subtypes:
-- `DomainNotFoundException` -> `404 Not Found`
-- `DomainConflictException` -> `409 Conflict`
-- `DomainRuleViolationException` -> `409 Conflict`
-- `DomainForbiddenException` -> `403 Forbidden`
-
-Rules:
-
-- `detail` may be shown to the user only if it is safe and business-oriented.
-- `errorCode` must be stable and domain-specific.
-
-Examples:
-
-- `document.batch_not_found`
-- `identity.invalid_otp`
-- `retention.legal_hold_enabled`
-
-### 4.2.1 Authentication and authorization errors
-
-These are not generic domain errors and must be handled explicitly by the auth pipeline.
-
-Authentication failure:
-
-- use `401 Unauthorized`
-- return `ProblemDetails`
-- include `WWW-Authenticate` when bearer authentication is in use
-- use a stable code such as `auth.unauthorized`
-- do not reveal whether the username, password, OTP, or token was the exact failure point
-
-Authorization failure:
-
-- use `403 Forbidden`
-- return `ProblemDetails`
-- use a stable code such as `auth.forbidden`
-- `detail` must remain safe and must not disclose hidden resources or policies beyond what the caller is allowed to know
-
-#### Infrastructure errors
-
-Use for failures in:
-
-- Azure SQL
-- Blob Storage
-- Redis
-- Notification Hub
-- Auth0 or Microsoft Entra integrations
-- network, timeout, and dependency availability failures
-
-HTTP status:
-
-- `503 Service Unavailable` for transient dependency failures
-- `500 Internal Server Error` for non-transient infrastructure failures that cannot be classified better
-
-Rules:
-
-- Never expose the raw dependency exception message.
-- Use a generic `title` and safe `detail`.
-- Include `retryable = true` when the client can retry later.
-
-Example codes:
-
-- `infrastructure.azure_sql_unavailable`
-- `infrastructure.blob_timeout`
-- `infrastructure.auth_provider_unavailable`
-
-#### Unexpected errors
-
-Use when the exception is unknown or not mapped.
-
-HTTP status:
-
-- `500 Internal Server Error`
-
-Rules:
-
-- return a generic message
-- log the full exception internally with `correlationId`
-- do not leak implementation details
-
-#### Additional protocol-level errors
-
-These are not business failures, but the API must define them so implementations do not invent inconsistent responses later.
-
-- `413 Payload Too Large`: file upload exceeds allowed size
-- `415 Unsupported Media Type`: request content type is unsupported
-- `429 Too Many Requests`: throttling or abuse protection
-- `412 Precondition Failed`: optimistic concurrency or conditional request failed
-
-Recommended error codes:
-
-- `request.payload_too_large`
-- `request.unsupported_media_type`
-- `request.rate_limited`
-- `request.precondition_failed`
-
-For `429`, include `Retry-After` when available.
-
-### API response rules by scenario
-
-| Scenario | Status | Response body |
-|---|---|---|
-| Read successful | `200` | `ApiResponse<T>` |
-| Resource created | `201` | `ApiResponse<T>` |
-| Async process accepted | `202` | `ApiResponse<T>` |
-| Successful command with no body | `204` | No body |
-| Request validation failed | `400` | `ValidationProblemDetails` |
-| Authentication failed | `401` | `ProblemDetails` |
-| Authenticated but not allowed | `403` | `ProblemDetails` |
-| Requested domain resource not found | `404` | `ProblemDetails` |
-| Business rule or state conflict | `409` | `ProblemDetails` |
-| Concurrency or precondition failure | `412` | `ProblemDetails` |
-| Request payload too large | `413` | `ProblemDetails` |
-| Unsupported content type | `415` | `ProblemDetails` |
-| Rate limited | `429` | `ProblemDetails` |
-| Downstream dependency unavailable | `503` | `ProblemDetails` |
-| Unhandled server error | `500` | `ProblemDetails` |
-
-Additional rules:
-
-- Controllers must not build ad hoc error payloads.
-- Controllers must not catch exceptions unless they are translating a known case into a better domain exception.
-- Services may throw typed exceptions; the global handler maps them to HTTP.
-- Repositories and infrastructure adapters must wrap vendor exceptions into typed infrastructure exceptions before they cross into the service layer.
-
-### Standard exception model
-
-Shared exceptions:
-[AppException.cs](server/QuietWealth.Backend/shared/Errors/AppException.cs:1)
-```csharp
-namespace QuietWealth.Bakend.Shared.Errors;
-
-public abstract class AppException(
-    string message,
-    string errorCode) : Exception(message)
-{
-    public string ErrorCode { get; } = errorCode;
-}
-
-public abstract class DomainException(
-    string message,
-    string errorCode) : AppException(message, errorCode);
-
-public sealed class DomainNotFoundException(
-    string message,
-    string errorCode) : DomainException(message, errorCode);
-
-public sealed class DomainConflictException(
-    string message,
-    string errorCode) : DomainException(message, errorCode);
-
-public sealed class DomainRuleViolationException(
-    string message,
-    string errorCode) : DomainException(message, errorCode);
-
-public sealed class DomainForbiddenException(
-    string message,
-    string errorCode) : DomainException(message, errorCode);
-
-public sealed class InfrastructureException(
-    string message,
-    string errorCode,
-    bool retryable = false) : AppException(message, errorCode)
-{
-    public bool Retryable { get; } = retryable;
-}
-```
-
-### Global exception handler example
-
-Implement one global handler instead of repeating response logic inside controllers.
-
-[GlobalExceptionHandler.cs](server/QuietWealth.Backend/shared/Api/GlobalExceptionHandler.cs:1)
-```csharp
-using Microsoft.AspNetCore.Diagnostics;
-using Microsoft.AspNetCore.Mvc;
-using QuietWealth.Bakend.Shared.Errors;
-
-namespace QuietWealth.Bakend.Shared.Api;
-
-public sealed class GlobalExceptionHandler(
-    ILogger<GlobalExceptionHandler> logger) : IExceptionHandler
-{
-    public async ValueTask<bool> TryHandleAsync(
-        HttpContext httpContext,
-        Exception exception,
-        CancellationToken cancellationToken)
-    {
-        var correlationId =
-            httpContext.Items[CorrelationIdMiddleware.HeaderName]?.ToString()
-            ?? httpContext.TraceIdentifier;
-
-        logger.LogError(
-            exception,
-            "Unhandled exception. CorrelationId: {CorrelationId}",
-            correlationId);
-
-        var (status, title, type, category, detail, errorCode, retryable) = exception switch
-        {
-            DomainNotFoundException ex => (
-                StatusCodes.Status404NotFound,
-                "Resource not found",
-                "https://api.quietwealth/errors/domain-not-found",
-                "not-found",
-                ex.Message,
-                ex.ErrorCode,
-                (bool?)null),
-
-            DomainConflictException ex => (
-                StatusCodes.Status409Conflict,
-                "Conflict",
-                "https://api.quietwealth/errors/domain-conflict",
-                "conflict",
-                ex.Message,
-                ex.ErrorCode,
-                (bool?)null),
-
-            DomainRuleViolationException ex => (
-                StatusCodes.Status409Conflict,
-                "Domain rule violated",
-                "https://api.quietwealth/errors/domain-rule-violation",
-                "domain",
-                ex.Message,
-                ex.ErrorCode,
-                (bool?)null),
-
-            DomainForbiddenException ex => (
-                StatusCodes.Status403Forbidden,
-                "Forbidden",
-                "https://api.quietwealth/errors/forbidden",
-                "authorization",
-                ex.Message,
-                ex.ErrorCode,
-                (bool?)null),
-
-            InfrastructureException ex => (
-                ex.Retryable ? StatusCodes.Status503ServiceUnavailable : StatusCodes.Status500InternalServerError,
-                ex.Retryable ? "Dependency unavailable" : "Infrastructure failure",
-                ex.Retryable
-                    ? "https://api.quietwealth/errors/dependency-unavailable"
-                    : "https://api.quietwealth/errors/infrastructure",
-                "infrastructure",
-                ex.Retryable
-                    ? "A required service is temporarily unavailable. Try again later."
-                    : "The request could not be completed.",
-                ex.ErrorCode,
-                ex.Retryable),
-
-            _ => (
-                StatusCodes.Status500InternalServerError,
-                "Internal server error",
-                "https://api.quietwealth/errors/unexpected",
-                "unexpected",
-                "The request could not be completed.",
-                "unexpected.internal_server_error",
-                (bool?)null)
-        };
-
-        var problemDetails = new ProblemDetails
-        {
-            Status = status,
-            Title = title,
-            Type = type,
-            Detail = detail,
-            Instance = httpContext.Request.Path
-        };
-
-        problemDetails.Extensions["correlationId"] = correlationId;
-        problemDetails.Extensions["errorCode"] = errorCode;
-        problemDetails.Extensions["category"] = category;
-
-        if (retryable is not null)
-        {
-            problemDetails.Extensions["retryable"] = retryable.Value;
-        }
-
-        httpContext.Response.StatusCode = status;
-
-        await httpContext.Response.WriteAsJsonAsync(problemDetails, cancellationToken);
-        return true;
-    }
-}
-```
-
-Registration example:
-[Program.cs](server/QuietWealth.Backend/Program.cs:18)
-```csharp
-builder.Services.AddProblemDetails();
-builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
-
-var app = builder.Build();
-
-app.UseExceptionHandler();
-```
-
-Important rule:
-
-- `OperationCanceledException` and request-abort scenarios must not be reported as ordinary `500` server errors. They should be logged at low severity or ignored when the client disconnected.
-
-### Validation response example
-
-The API must customize model-state failures so validation also returns the shared extensions.
-
-[Program.cs](/server/QuietWealth.Backend/Program.cs:19)
-```csharp
-using Microsoft.AspNetCore.Mvc;
-
-builder.Services.AddControllers()
-    .ConfigureApiBehaviorOptions(options =>
-    {
-        options.InvalidModelStateResponseFactory = context =>
-        {
-            var correlationId =
-                context.HttpContext.Items[CorrelationIdMiddleware.HeaderName]?.ToString()
-                ?? context.HttpContext.TraceIdentifier;
-
-            var problemDetails = new ValidationProblemDetails(context.ModelState)
-            {
-                Type = "https://api.quietwealth/errors/validation",
-                Title = "One or more validation errors occurred.",
-                Status = StatusCodes.Status400BadRequest,
-                Instance = context.HttpContext.Request.Path
-            };
-
-            problemDetails.Extensions["correlationId"] = correlationId;
-            problemDetails.Extensions["errorCode"] = "validation.failed";
-            problemDetails.Extensions["category"] = "validation";
-
-            return new BadRequestObjectResult(problemDetails)
-            {
-                ContentTypes = { "application/problem+json" }
-            };
-        };
-    });
-```
-
-### Correlation middleware example
-
-[CorrelationIdMiddleware.cs](server/QuietWealth.Backend/shared/Api/CorrelationIdMiddleware.cs:1)
-```csharp
-namespace QuietWealth.Bakend.Shared.Api;
-
-public sealed class CorrelationIdMiddleware(RequestDelegate next)
-{
-    public const string HeaderName = "X-Correlation-Id";
-
-    public async Task InvokeAsync(HttpContext context)
-    {
-        var correlationId = context.Request.Headers.TryGetValue(HeaderName, out var incoming)
-            && !string.IsNullOrWhiteSpace(incoming)
-                ? incoming.ToString()
-                : Guid.NewGuid().ToString("N");
-
-        context.Items[HeaderName] = correlationId;
-        context.Response.Headers[HeaderName] = correlationId;
-
-        await next(context);
-    }
-}
-```
-
-Registration:
-[Program.cs](server/QuietWealth.Backend/Program.cs:74)
-
-```csharp
-app.UseMiddleware<CorrelationIdMiddleware>();
-app.UseExceptionHandler();
-```
-
-`CorrelationIdMiddleware` must run before exception handling writes the response body.
-
-Do not treat the response header itself as the source of truth. In the implementation, prefer a scoped accessor or `HttpContext.Items`, and only mirror the value to the response header.
-
-### Controller usage rule
-
-Controllers stay thin and return success only. They should not manually create error responses.
-
-Example: [DocumentIntakeController.cs](server/QuietWealth.Backend/domains/document-intake/controllers/DocumentIntakeController.cs)
-```csharp
-[ApiController]
-[Route("api/files")]
-public sealed class DocumentIntakeController(
-    IDocumentIntakeService documentIntakeService) : ControllerBase
-{
-    [HttpPost("upload")]
-    [ProducesResponseType(typeof(ApiResponse<UploadFilesResponse>), StatusCodes.Status202Accepted)]
-    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
-    public async Task<ActionResult<ApiResponse<UploadFilesResponse>>> UploadAsync(
-        [FromBody] UploadFilesRequest request,
-        CancellationToken cancellationToken)
-    {
-        var response = await documentIntakeService.UploadAsync(request, cancellationToken);
-        var correlationId =
-            HttpContext.Items[CorrelationIdMiddleware.HeaderName]?.ToString()
-            ?? HttpContext.TraceIdentifier;
-
-        return Accepted(new ApiResponse<UploadFilesResponse>(response, correlationId));
-    }
-}
-```
-
-### Repository and service rules
-
-#### Services
-- validate business rules
-- throw typed domain exceptions
-- never return `null` to represent an error case
-- do not leak repository or SDK exceptions directly to controllers
-
-Example:
-[IdentityAccessService.cs](server/QuietWealth.Backend/domains/identity-access/services/IdentityAccessService.cs):
-
-```csharp
-public async Task<UserSession> GetCurrentSessionAsync(CancellationToken cancellationToken = default)
-{
-    var session = await userSessionRepository.GetCurrentSessionAsync(cancellationToken);
-
-    if (session is null)
-    {
-        throw new DomainNotFoundException(
-            "The current session was not found.",
-            "identity.session_not_found");
-    }
-
-    return session;
-}
-```
-
-#### Repositories and infrastructure adapters
-- catch vendor-specific exceptions where needed
-- translate them into `InfrastructureException`
-- preserve the original exception as `InnerException` for logs
-
-Example:
-[AzureSqlConnectionFactory.cs](server/QuietWealth.Backend/shared/Infrastructure/AzureSqlConnectionFactory.cs)
-```csharp
-try
-{
-    // Azure SQL or Blob SDK call
-}
-catch (SqlException ex)
-{
-    throw new InfrastructureException(
-        "The request could not be completed because Azure SQL is unavailable.",
-        "infrastructure.azure_sql_unavailable",
-        retryable: true);
-}
-```
-
-### OpenAPI rules
-
-Every endpoint must document:
-- success envelope type
-- `400` validation problem
-- relevant domain errors such as `404` or `409`
-- infrastructure or unexpected failures when they are meaningful for clients
-
-The OpenAPI contract must show `application/problem+json` for error responses.
-Auth-protected endpoints must also document `401` and `403`.
-Upload endpoints must also document `413` and `415`.
-Endpoints with concurrency control must also document `412`.
-
-### Do not do
-- do not return custom ad hoc error DTOs per controller
-- do not return `200 OK` for business failures
-- do not expose raw exception details to clients
-- do not omit `correlationId` from any response path
-
-
-## Testing
+## Backend Testing and Quality Strategy
 
 ### Mandatory test project layout
 Developers must create and maintain the following backend [test projects](server/tests):
@@ -2533,8 +1837,8 @@ public sealed class MetadataApiTests : IClassFixture<WebApplicationFactory<Progr
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
-        payload.GetProperty("name").GetString().Should().Be("QuietWealth OpenAPI Contract");
-        payload.GetProperty("url").GetString().Should().Be("/openapi/quietwealth-backend.openapi.json");
+        payload.GetProperty("name").GetString().Should().Be("DUA Backend OpenAPI Contract");
+        payload.GetProperty("url").GetString().Should().Be("/openapi/dua-backend.openapi.json");
     }
 }
 ```
@@ -2777,14 +2081,14 @@ Developers may exclude generated OpenAPI files, DTOs that only carry data, and t
 
 ### User authentication and session validation
 1. The user authenticates through Auth0 Universal Login federated with Microsoft Entra ID.
-2. The backend completes the federated callback flow and establishes the QuietWealth session.
-3. The frontend calls protected backend endpoints with secure cookies using `withCredentials`.
-4. `IdentityAccessService` validates session state, roles, permissions, and tenant access before continuing.
+2. Auth0 completes the Authorization Code + PKCE flow and returns tokens to the configured QuietWealth callback.
+3. The frontend sends the Auth0 access token as a Bearer token to protected backend endpoints.
+4. `IdentityAccessService` validates issuer, audience, signature, expiration, roles, permissions, and session state.
 5. The backend creates or refreshes session metadata through [`IUserSessionRepository`](/server/QuietWealth.Backend/domains/identity-access/repositories/IUserSessionRepository.cs).
-6. Protected endpoints validate the active session and permission policies before running business logic.
+6. Protected endpoints validate the JWT and permission policies before running business logic.
 7. Logout clears the local session, delegates logout to Auth0, and emits `UserLoggedOut`.
 
-Errors: `401 Unauthorized` for invalid or expired sessions, `403 Forbidden` for missing permissions, Auth0 callback failures return the user to the login screen.
+Errors: `401 Unauthorized` for invalid or expired tokens, `403 Forbidden` for missing permissions, Auth0 callback failures return the user to the login screen.
 
 ---
 
@@ -2925,7 +2229,6 @@ flowchart TD
         DIS["DocumentIntake\nService"]
         CVS["CertificationValidation\nService"]
         MRS["MarketplaceRead\nService"]
-        IDS["InvestmentDetail\nService"]
         AOS["AuditObservability\nService"]
         RAS["RetentionArchival\nService"]
     end
@@ -3112,6 +2415,7 @@ flowchart TD
   - [`server/QuietWealth.Backend/domains/document-intake/`](/server/QuietWealth.Backend/domains/document-intake)
   - [`server/QuietWealth.Backend/domains/retention-archival/`](/server/QuietWealth.Backend/domains/retention-archival)
   - [`server/QuietWealth.Backend/domains/audit-observability/`](/server/QuietWealth.Backend/domains/audit-observability)
+  - <<Agregar otros dominios si se implementan>>
 
 ### ACL policy for cross-domain communication
 - All cross-domain calls must go through the ACL layer in [`server/QuietWealth.Backend/acls/`](/server/QuietWealth.Backend/acls).
@@ -3121,6 +2425,7 @@ flowchart TD
   - `document-intake-to-certification-validation`
   - `certification-validation-to-marketplace`
   - `all-domains-to-audit-observability`
+  - <<Agregar otros ACLs si aparecen dependencias cross-domain>>
 
 ### Scaffold acceptance criteria
 - Solution compiles successfully with empty/stub implementations.
@@ -3145,10 +2450,6 @@ The following backend artifacts use the repository pattern:
   - `IRetentionRecordRepository`
 - [domains/marketplace/repositories/](/server/QuietWealth.Backend/domains/marketplace/repositories/)
   - `IMarketplaceListingRepository`
-- [domains/certification-validation/repositories/](/server/QuietWealth.Backend/domains/certification-validation/repositories/)
-  - `ICertificationReviewRepository`
-- [domains/identity-access/repositories/](/server/QuietWealth.Backend/domains/identity-access/repositories/)
-  - `ISMEProfileRepository`
 
 ##### When to apply here
 Apply only if all are true:
@@ -3271,7 +2572,7 @@ The following backend artifacts use the facade pattern:
 - [domains/identity-access/services/](/server/QuietWealth.Backend/domains/identity-access/services/)
   - `IdentityAccessFacade`
 - [domains/document-intake/services/](/server/QuietWealth.Backend/domains/document-intake/services/)
-  - `DocumentIntakeFacade`
+  - `DocumentUploadFacade`
 - [domains/audit-observability/services/](/server/QuietWealth.Backend/domains/audit-observability/services/)
   - `NotificationFacade`
 
@@ -3292,7 +2593,7 @@ Skip facades for:
 ##### Implementation recipe
 
 ```csharp
-public interface IDocumentIntakeFacade
+public interface IDocumentUploadFacade
 {
     Task<UploadPermissionDto> RequestUploadPermissionAsync(
         Guid batchId,
@@ -3308,11 +2609,11 @@ public interface IDocumentIntakeService
         CancellationToken cancellationToken);
 }
 
-public sealed class DocumentIntakeFacade : IDocumentIntakeFacade
+public sealed class DocumentUploadFacade : IDocumentUploadFacade
 {
     private readonly IDocumentIntakeService intake;
 
-    public DocumentIntakeFacade(IDocumentIntakeService intake) => this.intake = intake;
+    public DocumentUploadFacade(IDocumentIntakeService intake) => this.intake = intake;
 
     public Task<UploadPermissionDto> RequestUploadPermissionAsync(
         Guid batchId,
@@ -3320,6 +2621,7 @@ public sealed class DocumentIntakeFacade : IDocumentIntakeFacade
         CancellationToken cancellationToken) =>
         intake.CreateUploadPermissionAsync(batchId, fileName, cancellationToken);
 }
+```
 
 ##### Migration steps for a new facade
 
@@ -3464,15 +2766,14 @@ Expected: reliable side effects use `OutboxMessage`, not direct best-effort publ
 The following backend artifacts use domain events:
 - [domains/document-intake/models/](/server/QuietWealth.Backend/domains/document-intake/models/)
   - `DocumentBatchCreated`
-  - `SourceDocumentValidationCompleted`
-  - `SourceDocumentValidationFailed`
+  - `SourceDocumentProcessed`
 - [domains/certification-validation/models/](/server/QuietWealth.Backend/domains/certification-validation/models/)
   - `CertificationApproved`
   - `CertificationRejected`
 - [domains/marketplace/models/](/server/QuietWealth.Backend/domains/marketplace/models/)
   - `MarketplaceListingPublished`
 - [domains/retention-archival/models/](/server/QuietWealth.Backend/domains/retention-archival/models/)
-  - `RecordsArchived`
+  - `RetentionRecordArchived`
 
 ##### When to apply here
 Apply only if all are true:
@@ -3497,13 +2798,7 @@ public interface IDomainEvent
     DateTimeOffset OccurredAtUtc { get; }
 }
 
-public interface IDomainEvent
-{
-    Guid AggregateId { get; }
-    DateTimeOffset OccurredAtUtc { get; }
-}
-
-public sealed record SourceDocumentValidationCompleted(
+public sealed record SourceDocumentProcessed(
     Guid AggregateId,
     DateTimeOffset OccurredAtUtc,
     string Status) : IDomainEvent;
@@ -4425,7 +3720,7 @@ Integrated Identity Providers:
 - JWT validation
 - Session validation in backend
 - HTTPS required for all authentication traffic
-- MFA enforced for all roles through Auth0 and Microsoft Entra ID.
+- MFA support available through Auth0
 - Client ID is public frontend configuration
 - Client Secret is backend-only configuration and is never stored in JWT claims
 - Token expiration validation
@@ -4453,6 +3748,7 @@ Expected integration characteristics:
 - Average authentication response time: 1–5 seconds
 - JWT payload size: below 10 KB
 - Support for thousands of concurrent authentication requests
+- Expected daily users for MVP validation: XXX
 
 Potential bottleneck:
 Large concurrent login spikes during business hours for SME users accessing financial trust records.
@@ -4480,13 +3776,13 @@ Mitigation strategy:
 
 Authentication Flow:
 1. User selects "Continue with Microsoft"
-2. Frontend redirects the browser to the backend Microsoft login endpoint
-3. The backend starts Auth0 Universal Login and federates authentication with Microsoft
+2. Frontend redirects user to Auth0 Universal Login
+3. Auth0 federates authentication with Microsoft
 4. Identity provider authenticates the user
-5. Auth0 returns control to the configured QuietWealth callback
-6. The backend completes the callback flow and establishes the QuietWealth session
-7. Frontend sends authenticated requests with secure cookies via `withCredentials`
-8. Backend validates session state, roles, permissions, and tenant access
+5. Auth0 returns the authorization code to the configured QuietWealth callback
+6. Auth0 SDK completes the PKCE token exchange and obtains the access token and ID token
+7. Frontend sends the access token as a Bearer token to the backend
+8. Backend validates issuer, audience, signature, expiration, roles, and permissions
 9. User profile and session metadata are created or updated internally
 10. User gains access to the SME financial trust platform
 
@@ -4496,7 +3792,7 @@ Authentication Flow:
 Used to abstract all third-party authentication providers behind a single authentication interface.
 
 Example:
-- AuthFacade.beginMicrosoftLogin()
+- AuthFacade.authenticateUser()
 
 #### DTOs (Data Transfer Objects)
 Used for authentication request and response encapsulation.
@@ -4519,3 +3815,52 @@ https://datatracker.ietf.org/doc/html/rfc6749
 
 - Microsoft Entra ID Documentation  
 https://learn.microsoft.com/en-us/entra/
+
+
+# MVP Scope
+
+## Descripción
+MVP local de confianza financiera: inversionistas consultan SMEs y sus métricas certificadas, SMEs cargan metadatos de documentos y expertos emiten decisiones. No usa Azure, Auth0 ni pagos reales.
+
+## Core Features
+- Login local por rol: `Investor`, `SME`, `Expert`.
+- Marketplace con búsqueda, detalle financiero y trust record.
+- Carga de documentos (PDF, DOC/DOCX, XLS/XLSX, PNG/JPG/JPEG; máximo 10 MB) y solicitud de revisión.
+- Panel experto para aprobar o rechazar; la decisión actualiza inmediatamente el marketplace en memoria.
+- Logout local.
+
+## Supporting Features
+API REST local y endpoints `/health/live` y `/health/ready`, cinco SMEs y cuatro solicitudes sembradas en memoria.
+
+## Out of Scope
+Auth0/Entra, Azure, Blob/Queue/SQL cloud, pagos, inversión monetaria, IA, notificaciones, administración y CI/CD.
+
+## User Journeys en scope
+1. **Investor**: login → marketplace → detalle/trust record → registrar interés → logout.
+2. **SME**: login → carga de documentos → solicitud `UnderReview` → logout.
+3. **Expert**: login → panel → aprobar/rechazar → marketplace refleja el estado → logout.
+
+## Ejecución local verificada
+Requisitos: Node 22+, npm y .NET SDK 9.
+
+Backend (puerto `5147`):
+```powershell
+cd server\QuietWealth.Backend
+dotnet run --urls http://localhost:5147
+```
+
+Frontend (puerto `3000`):
+```powershell
+cd app
+npm install
+npm run dev
+```
+
+Abre `http://localhost:3000`. La API usa `http://localhost:5147` por defecto. Datos demo: `investor@quietwealth.test`, `sme@quietwealth.test`, `expert@quietwealth.test` (la selección de rol en pantalla es la autenticación simulada).
+
+## Servicios simulados
+`LocalMvpStore` sustituye SQL, Blob Storage y colas: guarda seed data, metadatos de archivos y decisiones solo mientras el backend está ejecutándose. En producción se reemplazaría por repositorios de base de datos, almacenamiento de objetos y mensajería. La carga del navegador sólo envía metadatos; no persiste bytes de archivo.
+
+## Troubleshooting
+- Si el frontend no puede conectar, confirma que el backend está en `http://localhost:5147`.
+- Las decisiones y archivos vuelven al seed al reiniciar el backend: es comportamiento esperado del MVP local.
