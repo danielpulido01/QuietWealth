@@ -1232,9 +1232,9 @@ src/
   - AuthLoginSucceeded
   - AuthLoginFailed
   - UserLoggedOut
-  - FileUploadStarted
-  - FileUploadCompleted
-  - FileUploadRejected
+  - FilesUploadStarted
+  - FilesUploadCompleted
+  - FilesUploadRejected
   - SupportedFilesValidated
   - CertificationReviewRequested
   - CertificationApproved
@@ -3470,14 +3470,15 @@ Expected: reliable side effects use `OutboxMessage`, not direct best-effort publ
 The following backend artifacts use domain events:
 - [domains/document-intake/models/](/server/QuietWealth.Backend/domains/document-intake/models/)
   - `DocumentBatchCreated`
-  - `SourceDocumentProcessed`
+  - `SourceDocumentValidationCompleted`
+  - `SourceDocumentValidationFailed`
 - [domains/certification-validation/models/](/server/QuietWealth.Backend/domains/certification-validation/models/)
   - `CertificationApproved`
   - `CertificationRejected`
 - [domains/marketplace/models/](/server/QuietWealth.Backend/domains/marketplace/models/)
   - `MarketplaceListingPublished`
 - [domains/retention-archival/models/](/server/QuietWealth.Backend/domains/retention-archival/models/)
-  - `RetentionRecordArchived`
+  - `RecordsArchived`
 
 ##### When to apply here
 Apply only if all are true:
@@ -3502,7 +3503,13 @@ public interface IDomainEvent
     DateTimeOffset OccurredAtUtc { get; }
 }
 
-public sealed record SourceDocumentProcessed(
+public interface IDomainEvent
+{
+    Guid AggregateId { get; }
+    DateTimeOffset OccurredAtUtc { get; }
+}
+
+public sealed record SourceDocumentValidationCompleted(
     Guid AggregateId,
     DateTimeOffset OccurredAtUtc,
     string Status) : IDomainEvent;
