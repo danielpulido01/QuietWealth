@@ -1,6 +1,304 @@
 {
-  "login.title": "Login",
-  "login.username": "Nombre de usuario",
-  "login.password": "Contrase\u00f1a",
-  "login.token": "Token de un solo uso"
+  "brand": {
+    "name": "QuietWealth",
+    "productTag": "Mercados privados confiables",
+    "sidebarSummary": "Flujos de inversion en PYMEs certificadas para inversionistas, operadores y revisores expertos."
+  },
+  "common": {
+    "actions": {
+      "close": "Cerrar"
+    },
+    "language": {
+      "label": "Idioma"
+    },
+    "status": {
+      "loading": "Cargando…",
+      "signingOut": "Cerrando sesión…",
+      "error": "Error"
+    },
+    "errors": {
+      "notFound": "No fue posible encontrar ese registro.",
+      "loadDetail": "No fue posible cargar la empresa seleccionada."
+    },
+    "errorBoundary": {
+      "title": "La aplicación encontró un error inesperado.",
+      "description": "Recarga la experiencia o vuelve al inicio de sesión para empezar de nuevo."
+    }
+  },
+  "nav": {
+    "label": "Navegación principal",
+    "marketplace": "Marketplace",
+    "documents": "Carga de documentos",
+    "validation": "Revisión experta",
+    "logout": "Cerrar sesión"
+  },
+  "roles": {
+    "Investor": {
+      "label": "Inversionista",
+      "summary": "Revisa oportunidades certificadas."
+    },
+    "SME": {
+      "label": "PYME",
+      "summary": "Carga documentos para certificación."
+    },
+    "Expert": {
+      "label": "Experto",
+      "summary": "Valida expedientes y publica decisiones."
+    }
+  },
+  "status": {
+    "Certified": "Certificada",
+    "UnderReview": "En revisión",
+    "Rejected": "Rechazada"
+  },
+  "sectors": {
+    "Technology": "Tecnología",
+    "Energy": "Energía",
+    "Commerce": "Comercio",
+    "Marketing": "Marketing",
+    "Agriculture": "Agricultura"
+  },
+  "login": {
+    "title": "Bienvenido de nuevo",
+    "subtitle": "Inicia sesión con el rol operativo que quieres simular en el MVP local.",
+    "hero": "QuietWealth convierte evidencia de PYMEs en un brief de confianza listo para inversionistas y con responsabilidad explícita de revisión.",
+    "panelEyebrow": "Acceso local",
+    "cta": "Continuar con Microsoft",
+    "ctaLoading": "Iniciando sesión…",
+    "localError": "No fue posible iniciar la sesión local.",
+    "role": {
+      "label": "Selecciona un rol"
+    },
+    "benefits": {
+      "certification": {
+        "title": "Certificación experta",
+        "description": "La evidencia financiera se revisa antes de exponer una empresa a inversionistas."
+      },
+      "marketplace": {
+        "title": "Marketplace curado",
+        "description": "Los inversionistas navegan empresas con una misma lectura de confianza y métricas."
+      },
+      "investment": {
+        "title": "Solicitudes estructuradas",
+        "description": "Cada solicitud deja explícitos el instrumento elegido y el riesgo asumido."
+      }
+    },
+    "sso": {
+      "title": "¿Por qué Microsoft?",
+      "description": "Esta demo usa un acceso tipo corporativo para alternar roles sin flujos de contraseña."
+    },
+    "legal": {
+      "prefix": "Al continuar, aceptas los",
+      "terms": "Términos de Servicio",
+      "and": "y la",
+      "privacy": "Política de Privacidad"
+    },
+    "username": "Nombre de usuario",
+    "password": "Contraseña",
+    "token": "Token de un solo uso"
+  },
+  "marketplace": {
+    "eyebrow": "Espacio del inversionista",
+    "title": "Empresas certificadas listas para revisión",
+    "subtitle": "Filtra el marketplace por sector, nivel de confianza y estado de certificación.",
+    "filters": {
+      "title": "Filtros del marketplace",
+      "searchLabel": "Buscar empresas",
+      "searchPlaceholder": "Buscar empresas…",
+      "sectorLabel": "Filtrar por sector",
+      "statusLabel": "Filtrar por estado de certificación",
+      "trustLabel": "Filtrar por nivel de confianza",
+      "allSectors": "Todos los sectores",
+      "allStatuses": "Todos los estados de certificación",
+      "allTrust": "Todos los niveles de confianza",
+      "trustHigh": "80+ confianza alta",
+      "trustMid": "60+ confianza en crecimiento"
+    },
+    "card": {
+      "growth": "Crecimiento",
+      "raised": "Capital recaudado",
+      "investors": "Inversionistas activos",
+      "trust": "Nivel de confianza",
+      "trustValue": "Trust {{value}}/100",
+      "viewDetails": "Ver brief de inversión"
+    },
+    "errors": {
+      "load": "No fue posible cargar el marketplace."
+    },
+    "empty": {
+      "title": "Ninguna empresa coincide con los filtros actuales.",
+      "description": "Amplía los filtros de confianza o sector para revisar más PYMEs certificadas."
+    }
+  },
+  "investmentDetail": {
+    "eyebrow": "Brief de inversión",
+    "title": "Detalle de inversión",
+    "summary": "Resumen operativo certificado",
+    "back": "Volver al marketplace",
+    "cta": "Iniciar solicitud de inversión",
+    "decisionPacketTitle": "Paquete de decisión",
+    "trendTitle": "Trayectoria financiera verificada",
+    "trendPeriod": "Período {{index}}",
+    "metrics": {
+      "raised": "Capital recaudado",
+      "raisedNote": "Acumulación de capital verificada",
+      "investors": "Inversionistas activos",
+      "investorsNote": "Base actual de inversionistas comprometidos",
+      "growth": "Tasa de crecimiento",
+      "growthNote": "Última señal verificada de crecimiento",
+      "roi": "ROI promedio",
+      "roiNote": "Rendimiento anual esperado"
+    },
+    "highlights": {
+      "trust": "Puntaje de confianza",
+      "retention": "Tasa de retención",
+      "mrr": "Ingresos recurrentes mensuales",
+      "margin": "Margen de beneficio"
+    }
+  },
+  "investmentForm": {
+    "eyebrow": "Solicitud de inversión",
+    "title": "Prepara una inversión simulada",
+    "subtitle": "Define el monto, el instrumento y la vía de liquidación antes de enviar la solicitud local.",
+    "back": "Volver al brief de inversión",
+    "summary": {
+      "company": "Empresa certificada",
+      "roi": "ROI esperado {{value}}"
+    },
+    "amount": {
+      "label": "Monto de inversión",
+      "placeholder": "500",
+      "helper": "Ticket mínimo: USD 500."
+    },
+    "instrument": {
+      "title": "Instrumento",
+      "options": {
+        "equity": {
+          "title": "Participación accionaria",
+          "description": "Propiedad con derechos de gobierno corporativo."
+        },
+        "convertible": {
+          "title": "Nota convertible",
+          "description": "Deuda que convierte en una ronda futura."
+        },
+        "revenue": {
+          "title": "Participación en ingresos",
+          "description": "Retornos ligados a ingresos mensuales verificados."
+        }
+      }
+    },
+    "payment": {
+      "title": "Vía de liquidación",
+      "options": {
+        "wire": {
+          "title": "Transferencia bancaria",
+          "description": "Liquidación local en 1–2 días hábiles."
+        },
+        "swift": {
+          "title": "SWIFT internacional",
+          "description": "Liquidación transfronteriza en 3–5 días hábiles."
+        },
+        "stablecoin": {
+          "title": "USDC / stablecoin",
+          "description": "Transferencia inmediata basada en red."
+        }
+      }
+    },
+    "legal": {
+      "title": "Confirmaciones legales",
+      "terms": "Acepto los términos de inversión y las divulgaciones operativas.",
+      "risk": "Entiendo el riesgo de pérdida parcial o total."
+    },
+    "submit": "Confirmar solicitud de inversión",
+    "note": "Solo MVP local. No se procesan fondos ni transferencias.",
+    "success": {
+      "eyebrow": "Solicitud registrada",
+      "title": "Inversión simulada guardada",
+      "description": "Tu solicitud para {{company}} fue registrada en el flujo de demo.",
+      "back": "Volver al marketplace"
+    }
+  },
+  "documents": {
+    "eyebrow": "Espacio de la PYME",
+    "title": "Carga documentos de certificación",
+    "subtitle": "Envía estados financieros y evidencia de identidad para revisión experta.",
+    "progress": {
+      "label": "Progreso de certificación",
+      "uploaded": "Información cargada",
+      "review": "Revisión experta",
+      "certified": "Certificación emitida"
+    },
+    "dropzone": {
+      "icon": "↑",
+      "title": "Arrastra archivos aquí",
+      "subtitle": "o usa la acción inferior",
+      "cta": "Seleccionar archivos",
+      "footnote": "Formatos aceptados: PDF, DOC, XLS, PNG, JPG. Máximo 10 MB por archivo."
+    },
+    "submit": {
+      "default": "Enviar a revisión",
+      "loading": "Enviando documentos…"
+    },
+    "feedback": {
+      "selectOne": "Selecciona al menos un documento antes de enviar.",
+      "invalid": "Solo se aceptan archivos PDF, DOC, DOCX, XLS, XLSX, PNG y JPG de hasta 10 MB.",
+      "success": "Los documentos se cargaron y se enviaron a revisión experta.",
+      "error": "No fue posible crear la solicitud de revisión."
+    },
+    "history": {
+      "title": "Historial de envíos",
+      "submitted": "Enviado",
+      "documents": "Documentos",
+      "status": "Estado",
+      "note": "Nota de revisión",
+      "pending": "Pendiente de decisión experta"
+    },
+    "empty": {
+      "title": "Todavía no hay historial de envíos.",
+      "description": "Carga evidencia financiera y de identidad para abrir la primera solicitud de certificación."
+    }
+  },
+  "validation": {
+    "eyebrow": "Espacio del experto",
+    "title": "Revisa solicitudes de certificación",
+    "subtitle": "Inspecciona documentos de soporte y publica una decisión de certificación clara.",
+    "actions": {
+      "review": "Revisar solicitud",
+      "approve": "Aprobar certificación",
+      "reject": "Rechazar solicitud"
+    },
+    "row": {
+      "requestId": "Solicitud {{id}}"
+    },
+    "dialog": {
+      "eyebrow": "Solicitud de certificación {{id}}",
+      "documentsTitle": "Documentos recibidos",
+      "openDocument": "Abrir {{document}}",
+      "reasonLabel": "Motivo del rechazo",
+      "reasonPlaceholder": "Explica la evidencia faltante o la brecha de verificación…",
+      "defaultReason": "La evidencia financiera no es suficiente para certificar.",
+      "finalDecision": "Decisión final",
+      "noReason": "La solicitud se cerró sin una nota adicional."
+    },
+    "errors": {
+      "load": "No fue posible cargar la cola de validación."
+    },
+    "empty": {
+      "title": "No hay solicitudes de certificación pendientes.",
+      "description": "Las nuevas cargas de PYMEs aparecerán aquí cuando se suban documentos."
+    }
+  },
+  "policies": {
+    "back": "Volver al inicio de sesión",
+    "terms": {
+      "eyebrow": "Legal",
+      "title": "Términos de servicio",
+      "body": "Este MVP local solo demuestra la estructura del flujo. No genera transacciones de inversión, transferencias de custodia ni asesoría legal dentro del entorno de demo."
+    },
+    "privacy": {
+      "eyebrow": "Legal",
+      "title": "Política de privacidad",
+      "body": "La demo almacena roles simulados y datos locales de solicitudes únicamente para flujos de desarrollo. No cargues información financiera ni de identidad real en este entorno."
+    }
+  }
 }

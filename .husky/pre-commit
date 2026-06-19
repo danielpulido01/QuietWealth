@@ -6,5 +6,4 @@ else
   NPM_BIN="npm"
 fi
 
-"$NPM_BIN" --prefix app run lint
-"$NPM_BIN" --prefix app run format:check
+"$NPM_BIN" run precommit

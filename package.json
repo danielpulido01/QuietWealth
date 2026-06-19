@@ -2,6 +2,8 @@
   "name": "quietwealth-tooling",
   "private": true,
   "scripts": {
+    "dev": "npm --prefix app run dev",
+    "precommit": "node scripts/precommit.mjs",
     "prepare": "husky",
     "lint": "npm --prefix app run lint",
     "format:check": "npm --prefix app run format:check"

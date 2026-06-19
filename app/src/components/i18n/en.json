@@ -1,6 +1,304 @@
 {
-  "login.title": "Login",
-  "login.username": "Username",
-  "login.password": "Password",
-  "login.token": "One-time token"
+  "brand": {
+    "name": "QuietWealth",
+    "productTag": "Trusted private markets",
+    "sidebarSummary": "Certified SME investment workflows for investors, operators, and expert reviewers."
+  },
+  "common": {
+    "actions": {
+      "close": "Close"
+    },
+    "language": {
+      "label": "Language"
+    },
+    "status": {
+      "loading": "Loading…",
+      "signingOut": "Signing out…",
+      "error": "Error"
+    },
+    "errors": {
+      "notFound": "We could not find that record.",
+      "loadDetail": "We could not load the selected company."
+    },
+    "errorBoundary": {
+      "title": "The app hit an unexpected error.",
+      "description": "Reload the experience or return to the login screen to start again."
+    }
+  },
+  "nav": {
+    "label": "Primary navigation",
+    "marketplace": "Marketplace",
+    "documents": "Document Upload",
+    "validation": "Expert Review",
+    "logout": "Sign out"
+  },
+  "roles": {
+    "Investor": {
+      "label": "Investor",
+      "summary": "Review certified SME opportunities."
+    },
+    "SME": {
+      "label": "SME",
+      "summary": "Upload documents for certification."
+    },
+    "Expert": {
+      "label": "Expert",
+      "summary": "Validate submissions and publish decisions."
+    }
+  },
+  "status": {
+    "Certified": "Certified",
+    "UnderReview": "Under review",
+    "Rejected": "Rejected"
+  },
+  "sectors": {
+    "Technology": "Technology",
+    "Energy": "Energy",
+    "Commerce": "Commerce",
+    "Marketing": "Marketing",
+    "Agriculture": "Agriculture"
+  },
+  "login": {
+    "title": "Welcome back",
+    "subtitle": "Sign in with the operating role you want to simulate in the local MVP.",
+    "hero": "QuietWealth turns SME evidence into an investor-ready trust brief with explicit review accountability.",
+    "panelEyebrow": "Local access",
+    "cta": "Continue with Microsoft",
+    "ctaLoading": "Starting session…",
+    "localError": "We could not start the local session.",
+    "role": {
+      "label": "Choose a role"
+    },
+    "benefits": {
+      "certification": {
+        "title": "Expert certification",
+        "description": "Financial evidence is reviewed before a company is surfaced to investors."
+      },
+      "marketplace": {
+        "title": "Curated marketplace",
+        "description": "Investors browse companies through a consistent trust and metrics lens."
+      },
+      "investment": {
+        "title": "Structured requests",
+        "description": "Each investment request makes the selected instrument and risk explicit."
+      }
+    },
+    "sso": {
+      "title": "Why Microsoft?",
+      "description": "This demo uses a corporate-style entrypoint so each role can be switched without password flows."
+    },
+    "legal": {
+      "prefix": "By continuing, you accept the",
+      "terms": "Terms of Service",
+      "and": "and",
+      "privacy": "Privacy Policy"
+    },
+    "username": "Username",
+    "password": "Password",
+    "token": "One-time token"
+  },
+  "marketplace": {
+    "eyebrow": "Investor workspace",
+    "title": "Certified companies ready for review",
+    "subtitle": "Filter the marketplace by sector, trust level, and certification status.",
+    "filters": {
+      "title": "Marketplace filters",
+      "searchLabel": "Search companies",
+      "searchPlaceholder": "Search companies…",
+      "sectorLabel": "Filter by sector",
+      "statusLabel": "Filter by certification status",
+      "trustLabel": "Filter by trust level",
+      "allSectors": "All sectors",
+      "allStatuses": "All certification states",
+      "allTrust": "All trust levels",
+      "trustHigh": "80+ high trust",
+      "trustMid": "60+ growing trust"
+    },
+    "card": {
+      "growth": "Growth",
+      "raised": "Capital raised",
+      "investors": "Active investors",
+      "trust": "Trust level",
+      "trustValue": "Trust {{value}}/100",
+      "viewDetails": "View investment brief"
+    },
+    "errors": {
+      "load": "We could not load the marketplace."
+    },
+    "empty": {
+      "title": "No companies match the current filters.",
+      "description": "Broaden the trust or sector filters to review more certified SMEs."
+    }
+  },
+  "investmentDetail": {
+    "eyebrow": "Investment brief",
+    "title": "Investment detail",
+    "summary": "Certified operating brief",
+    "back": "Back to marketplace",
+    "cta": "Start investment request",
+    "decisionPacketTitle": "Decision packet",
+    "trendTitle": "Verified financial trail",
+    "trendPeriod": "Period {{index}}",
+    "metrics": {
+      "raised": "Capital raised",
+      "raisedNote": "Verified capital accumulation",
+      "investors": "Active investors",
+      "investorsNote": "Current engaged investor base",
+      "growth": "Growth rate",
+      "growthNote": "Latest verified growth signal",
+      "roi": "Average ROI",
+      "roiNote": "Expected annual performance"
+    },
+    "highlights": {
+      "trust": "Trust score",
+      "retention": "Retention rate",
+      "mrr": "Monthly recurring revenue",
+      "margin": "Profit margin"
+    }
+  },
+  "investmentForm": {
+    "eyebrow": "Investment request",
+    "title": "Prepare a simulated investment",
+    "subtitle": "Define the amount, instrument, and settlement path before submitting the local demo request.",
+    "back": "Back to investment brief",
+    "summary": {
+      "company": "Certified company",
+      "roi": "Expected ROI {{value}}"
+    },
+    "amount": {
+      "label": "Investment amount",
+      "placeholder": "500",
+      "helper": "Minimum ticket: USD 500."
+    },
+    "instrument": {
+      "title": "Instrument",
+      "options": {
+        "equity": {
+          "title": "Equity participation",
+          "description": "Share ownership with governance rights."
+        },
+        "convertible": {
+          "title": "Convertible note",
+          "description": "Debt that converts in a future financing round."
+        },
+        "revenue": {
+          "title": "Revenue participation",
+          "description": "Returns tied to verified monthly revenue."
+        }
+      }
+    },
+    "payment": {
+      "title": "Settlement path",
+      "options": {
+        "wire": {
+          "title": "Bank wire",
+          "description": "Domestic settlement in 1–2 business days."
+        },
+        "swift": {
+          "title": "International SWIFT",
+          "description": "Cross-border settlement in 3–5 business days."
+        },
+        "stablecoin": {
+          "title": "USDC / stablecoin",
+          "description": "Immediate network-based transfer."
+        }
+      }
+    },
+    "legal": {
+      "title": "Legal confirmations",
+      "terms": "I accept the investment terms and operating disclosures.",
+      "risk": "I understand the risk of partial or total loss."
+    },
+    "submit": "Confirm investment request",
+    "note": "Local MVP only. No funds or transfers are processed.",
+    "success": {
+      "eyebrow": "Request recorded",
+      "title": "Simulated investment saved",
+      "description": "Your request for {{company}} was recorded in the demo flow.",
+      "back": "Return to marketplace"
+    }
+  },
+  "documents": {
+    "eyebrow": "SME workspace",
+    "title": "Upload certification documents",
+    "subtitle": "Submit financial statements and identity evidence for expert review.",
+    "progress": {
+      "label": "Certification progress",
+      "uploaded": "Information uploaded",
+      "review": "Expert review",
+      "certified": "Certification issued"
+    },
+    "dropzone": {
+      "icon": "↑",
+      "title": "Drop files here",
+      "subtitle": "or use the action below",
+      "cta": "Choose files",
+      "footnote": "Accepted formats: PDF, DOC, XLS, PNG, JPG. Maximum 10 MB each."
+    },
+    "submit": {
+      "default": "Send for review",
+      "loading": "Sending documents…"
+    },
+    "feedback": {
+      "selectOne": "Select at least one document before submitting.",
+      "invalid": "Only PDF, DOC, DOCX, XLS, XLSX, PNG, and JPG files up to 10 MB are accepted.",
+      "success": "Documents were uploaded and routed for expert review.",
+      "error": "We could not create the review request."
+    },
+    "history": {
+      "title": "Submission history",
+      "submitted": "Submitted",
+      "documents": "Documents",
+      "status": "Status",
+      "note": "Review note",
+      "pending": "Awaiting expert decision"
+    },
+    "empty": {
+      "title": "No submission history yet.",
+      "description": "Upload financial and identity records to open the first certification request."
+    }
+  },
+  "validation": {
+    "eyebrow": "Expert workspace",
+    "title": "Review certification requests",
+    "subtitle": "Inspect supporting documents and publish a clear certification decision.",
+    "actions": {
+      "review": "Review request",
+      "approve": "Approve certification",
+      "reject": "Reject request"
+    },
+    "row": {
+      "requestId": "Request {{id}}"
+    },
+    "dialog": {
+      "eyebrow": "Certification request {{id}}",
+      "documentsTitle": "Submitted documents",
+      "openDocument": "Open {{document}}",
+      "reasonLabel": "Rejection reason",
+      "reasonPlaceholder": "Explain the missing evidence or the verification gap…",
+      "defaultReason": "Financial evidence is not sufficient for certification.",
+      "finalDecision": "Final decision",
+      "noReason": "This request was closed without an additional note."
+    },
+    "errors": {
+      "load": "We could not load the validation queue."
+    },
+    "empty": {
+      "title": "No pending certification requests.",
+      "description": "New SME submissions will appear here once documents are uploaded."
+    }
+  },
+  "policies": {
+    "back": "Return to login",
+    "terms": {
+      "eyebrow": "Legal",
+      "title": "Terms of service",
+      "body": "This local MVP demonstrates workflow structure only. No investment transaction, custody transfer, or legal advice is produced inside the demo environment."
+    },
+    "privacy": {
+      "eyebrow": "Legal",
+      "title": "Privacy policy",
+      "body": "The demo stores mock role access and local request data strictly for development workflows. Do not upload production financial or identity records into this environment."
+    }
+  }
 }

@@ -1,7 +1,10 @@
 export const routes = {
   login: "/login",
-  home: "/home",
-  generator: "/generator",
-  progress: "/generator/progress",
-  preview: "/generator/preview",
-};
+  terms: "/terms",
+  privacy: "/privacy",
+  marketplace: "/marketplace",
+  marketplaceDetail: "/marketplace/:id",
+  invest: "/invest/:id",
+  documents: "/documents",
+  validation: "/validation",
+} as const;

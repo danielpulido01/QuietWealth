@@ -149,8 +149,12 @@ function toResponseHeaders(headersMap: AxiosResponse["headers"]) {
   return headers;
 }
 
+function isNullBodyStatus(status: number) {
+  return status === 101 || status === 103 || status === 204 || status === 205 || status === 304;
+}
+
 function toFetchResponse(response: AxiosResponse<ArrayBuffer>) {
-  return new Response(response.data, {
+  return new Response(isNullBodyStatus(response.status) ? null : response.data, {
     status: response.status,
     statusText: response.statusText,
     headers: toResponseHeaders(response.headers),
