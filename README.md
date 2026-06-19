@@ -2443,8 +2443,8 @@ public sealed class MetadataApiTests : IClassFixture<WebApplicationFactory<Progr
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
-        payload.GetProperty("name").GetString().Should().Be("DUA Backend OpenAPI Contract");
-        payload.GetProperty("url").GetString().Should().Be("/openapi/dua-backend.openapi.json");
+        payload.GetProperty("name").GetString().Should().Be("QuietWealth OpenAPI Contract");
+        payload.GetProperty("url").GetString().Should().Be("/openapi/quietwealth-backend.openapi.json");
     }
 }
 ```
