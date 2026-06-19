@@ -1,6 +1,7 @@
 using QuietWealth.Bakend.Domains.IdentityAccess.Models;
 using QuietWealth.Bakend.Domains.IdentityAccess.Services;
 using Microsoft.AspNetCore.Mvc;
+using QuietWealth.Bakend.Shared.Api;
 
 namespace QuietWealth.Bakend.Domains.IdentityAccess.Controllers;
 
@@ -9,15 +10,27 @@ namespace QuietWealth.Bakend.Domains.IdentityAccess.Controllers;
 public sealed class IdentityAccessController(IIdentityAccessService identityAccessService) : ControllerBase
 {
     [HttpPost("login")]
-    public async Task<ActionResult<LoginResponse>> LoginAsync(
+    [ProducesResponseType(typeof(ApiResponse<LoginResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<ApiResponse<LoginResponse>>> LoginAsync(
         [FromBody] LoginRequest request,
         CancellationToken cancellationToken)
     {
         var response = await identityAccessService.LoginAsync(request, cancellationToken);
-        return Ok(response);
+        var correlationId =
+            HttpContext.Items[CorrelationIdMiddleware.HeaderName]?.ToString()
+            ?? HttpContext.TraceIdentifier;
+
+        return Ok(new ApiResponse<LoginResponse>(response, correlationId));
     }
 
     [HttpPost("logout")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> LogoutAsync(
         [FromBody] LogoutRequest request,
         CancellationToken cancellationToken)
@@ -27,16 +40,32 @@ public sealed class IdentityAccessController(IIdentityAccessService identityAcce
     }
 
     [HttpGet("session")]
-    public async Task<ActionResult<UserSession?>> GetSessionAsync(CancellationToken cancellationToken)
+    [ProducesResponseType(typeof(ApiResponse<UserSession>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<ApiResponse<UserSession>>> GetSessionAsync(CancellationToken cancellationToken)
     {
         var session = await identityAccessService.GetCurrentSessionAsync(cancellationToken);
-        return Ok(session);
+        var correlationId =
+            HttpContext.Items[CorrelationIdMiddleware.HeaderName]?.ToString()
+            ?? HttpContext.TraceIdentifier;
+
+        return Ok(new ApiResponse<UserSession>(session, correlationId));
     }
 
     [HttpGet("profile")]
-    public async Task<ActionResult<UserSession?>> GetProfileAsync(CancellationToken cancellationToken)
+    [ProducesResponseType(typeof(ApiResponse<UserSession>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<ApiResponse<UserSession>>> GetProfileAsync(CancellationToken cancellationToken)
     {
         var session = await identityAccessService.GetCurrentSessionAsync(cancellationToken);
-        return Ok(session);
+        var correlationId =
+            HttpContext.Items[CorrelationIdMiddleware.HeaderName]?.ToString()
+            ?? HttpContext.TraceIdentifier;
+
+        return Ok(new ApiResponse<UserSession>(session, correlationId));
     }
 }

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using QuietWealth.Bakend.Domains.AuditObservability.Repositories;
 using QuietWealth.Bakend.Domains.AuditObservability.Services;
@@ -8,6 +9,7 @@ using QuietWealth.Bakend.Domains.DocumentIntake.Services;
 using QuietWealth.Bakend.Domains.IdentityAccess.Repositories;
 using QuietWealth.Bakend.Domains.IdentityAccess.Services;
 using QuietWealth.Bakend.Shared.Abstractions;
+using QuietWealth.Bakend.Shared.Api;
 using QuietWealth.Bakend.Shared.Configuration;
 using QuietWealth.Bakend.Shared.Infrastructure;
 using QuietWealth.Backend.Domains.RetentionArchival.Repositories;
@@ -16,7 +18,37 @@ using QuietWealth.Backend.Domains.RetentionArchival.Services;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddProblemDetails();
-builder.Services.AddControllers();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+builder.Services.AddControllers()
+    .ConfigureApiBehaviorOptions(options =>
+    {
+        options.InvalidModelStateResponseFactory = context =>
+        {
+            var correlationId =
+                context.HttpContext.Items[CorrelationIdMiddleware.HeaderName]?.ToString()
+                ?? context.HttpContext.TraceIdentifier;
+
+            var problemDetails = new ValidationProblemDetails(context.ModelState)
+            {
+                Type = "https://api.quietwealth/errors/validation",
+                Title = "One or more validation errors occurred.",
+                Status = StatusCodes.Status400BadRequest,
+                Instance = context.HttpContext.Request.Path
+            };
+
+            problemDetails.Extensions["correlationId"] = correlationId;
+            problemDetails.Extensions["errorCode"] = "validation.failed";
+            problemDetails.Extensions["category"] = "validation";
+
+            var result = new ObjectResult(problemDetails)
+            {
+                StatusCode = StatusCodes.Status400BadRequest
+            };
+
+            result.ContentTypes.Add("application/problem+json");
+            return result;
+        };
+    });
 
 builder.Services.Configure<AzureSqlOptions>(builder.Configuration.GetSection(AzureSqlOptions.SectionName));
 builder.Services.Configure<BlobStorageOptions>(builder.Configuration.GetSection(BlobStorageOptions.SectionName));
@@ -73,6 +105,7 @@ builder.Services
 
 var app = builder.Build();
 
+app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseExceptionHandler();
 app.MapControllers();
 app.MapHealthChecks("/health/live", CreateHealthCheckOptions("live"));

@@ -8,5 +8,5 @@ public interface IIdentityAccessService
 
     Task LogoutAsync(LogoutRequest request, CancellationToken cancellationToken = default);
 
-    Task<UserSession?> GetCurrentSessionAsync(CancellationToken cancellationToken = default);
+    Task<UserSession> GetCurrentSessionAsync(CancellationToken cancellationToken = default);
 }

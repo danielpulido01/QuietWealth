@@ -1,6 +1,7 @@
 using QuietWealth.Bakend.Domains.AuditObservability.Models;
 using QuietWealth.Bakend.Domains.AuditObservability.Services;
 using Microsoft.AspNetCore.Mvc;
+using QuietWealth.Bakend.Shared.Api;
 
 namespace QuietWealth.Bakend.Domains.AuditObservability.Controllers;
 
@@ -9,9 +10,16 @@ namespace QuietWealth.Bakend.Domains.AuditObservability.Controllers;
 public sealed class AuditObservabilityController(IAuditObservabilityService auditObservabilityService) : ControllerBase
 {
     [HttpGet]
-    public async Task<ActionResult<ActivityReadResponse>> ReadAsync(CancellationToken cancellationToken)
+    [ProducesResponseType(typeof(ApiResponse<ActivityReadResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<ApiResponse<ActivityReadResponse>>> ReadAsync(CancellationToken cancellationToken)
     {
         var response = await auditObservabilityService.ReadActivityAsync(cancellationToken);
-        return Ok(response);
+        var correlationId =
+            HttpContext.Items[CorrelationIdMiddleware.HeaderName]?.ToString()
+            ?? HttpContext.TraceIdentifier;
+
+        return Ok(new ApiResponse<ActivityReadResponse>(response, correlationId));
     }
 }

@@ -1,5 +1,6 @@
 using QuietWealth.Bakend.Domains.DocumentIntake.Models;
 using QuietWealth.Bakend.Domains.DocumentIntake.Repositories;
+using QuietWealth.Bakend.Shared.Errors;
 
 namespace QuietWealth.Bakend.Domains.DocumentIntake.Services;
 
@@ -15,5 +16,18 @@ public sealed class DocumentIntakeService(IDocumentBatchRepository documentBatch
     }
 
     public Task<UploadFilesResponse> UploadAsync(UploadFilesRequest request, CancellationToken cancellationToken = default)
-        => Task.FromResult(new UploadFilesResponse(Guid.NewGuid(), "Accepted"));
+    {
+        var duplicateFileNames = request.FileNames
+            .GroupBy(fileName => fileName, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault(group => group.Count() > 1);
+
+        if (duplicateFileNames is not null)
+        {
+            throw new DomainRuleViolationException(
+                "Duplicate file names are not allowed within the same upload batch.",
+                "document.duplicate_file_name");
+        }
+
+        return Task.FromResult(new UploadFilesResponse(Guid.NewGuid(), "Accepted"));
+    }
 }

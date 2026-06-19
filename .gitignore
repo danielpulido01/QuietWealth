@@ -1,0 +1,8 @@
+/server/tests/QuietWealth.Backend.ApiTests/bin
+/server/tests/QuietWealth.Backend.IntegrationTests/obj
+/server/tests/QuietWealth.Backend.UnitTests/bin
+/server/tests/QuietWealth.Backend.UnitTests/obj
+/server/tests/QuietWealth.Backend.IntegrationTests/bin
+/server/QuietWealth.Backend/bin
+/server/QuietWealth.Backend/obj
+/server/tests/QuietWealth.Backend.ApiTests/obj

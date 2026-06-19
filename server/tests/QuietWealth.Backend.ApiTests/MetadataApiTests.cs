@@ -21,9 +21,10 @@ public sealed class MetadataApiTests : IClassFixture<WebApplicationFactory<Progr
         var response = await client.GetAsync("/api/metadata/openapi");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-
+        var correlationId = response.Headers.GetValues("X-Correlation-Id").Single();
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
-        payload.GetProperty("name").GetString().Should().Be("DUA Backend OpenAPI Contract");
-        payload.GetProperty("url").GetString().Should().Be("/openapi/dua-backend.openapi.json");
+        payload.GetProperty("data").GetProperty("name").GetString().Should().Be("DUA Backend OpenAPI Contract");
+        payload.GetProperty("data").GetProperty("url").GetString().Should().Be("/openapi/dua-backend.openapi.json");
+        payload.GetProperty("correlationId").GetString().Should().Be(correlationId);
     }
 }
