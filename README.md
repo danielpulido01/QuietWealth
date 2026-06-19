@@ -29,7 +29,7 @@ The core problem lies in the absence of a transparent, unified platform where fi
 - State Management: Redux Toolkit 2.8
 - Data Validations: Zod 4.3.6
 - HTTP Client: Axios 1.9
-- Authentication: Auth0 React SDK 2.2 (OAuth 2.0 Authorization Code + PKCE)
+- Authentication: Auth0 + Microsoft Entra ID via backend-managed session cookies
 - Unit Testing: Jest version 30.2.0
 - Integration Testing: Playwright version 1.52
 - Code Prettier Framework: Prettier 3.8.1
@@ -330,7 +330,8 @@ Components use hooks for business logic.
 Example:
 ```
 useApplicationServices()
-useAuth()
+useLogin()
+useLogout()
 useMarketplace()
 useDocumentUpload()
 useCertificationProgress()
@@ -339,6 +340,7 @@ useInvestmentDetail()
 usePermissions()
 usePolicies()
 useSession()
+useTheme()
 ```
 
 Hooks use [Services](/app/src/services), [Auth service](/app/src/auth/authService.ts) and [State](/app/src/state) for orchestration:
@@ -493,10 +495,10 @@ Developers must:
 ### 1.3.8 Testing Requirements for Components
 Each component must include tests. Verification command: `cd app && npm run test:ci`
 
-#### Unit tests (Jest)
+#### [Unit tests](/app/__tests__/unit)(Jest)
 | Folder | Covers |
 |---|---|
-| `app/__tests__/unit/auth/` | `AuthFacade`, guards, permission helpers, `MicrosoftProfileAdapter` |
+| `app/__tests__/unit/auth/` | `AuthFacade`, `authService`, guards, permission helpers |
 | `app/__tests__/unit/polling/` | `PollingOrchestrator` transitions, both strategies, terminal states |
 | `app/__tests__/unit/services/` | Services with a mocked `HttpClientFacade` |
 | `app/__tests__/unit/validation/` | Zod schemas — valid payloads pass, invalid ones fail with the expected shape |
@@ -508,7 +510,7 @@ Example tests:
 - Button shows loading state
 - Button triggers click handler
 
-#### Integration tests (Playwright)
+#### [Integration tests](/app/__tests__/e2e) (Playwright)
 
 Required flows:
 | Flow | File |
@@ -558,37 +560,31 @@ export function AppRoutes() {
 ## 1.4 Security
 
 ### 1.4.1 Technologies
-- Auth0 React SDK (OAuth 2.0 Authorization Code + PKCE)
-- Microsoft Entra ID (corporate IdP via Auth0 federation)
+- Auth0 with Microsoft Entra ID federation
 - Zod (runtime validation)
 - Axios via `HttpClientFacade`
-- JWT bearer tokens for protected API requests
+- Secure `HttpOnly` session cookies managed by the backend
 - React Router
-- Context API
+- Context API and in-memory session state (`SessionProvider` + `sessionStore`)
 
 ### 1.4.2 Authentication
-Uses Auth0 federated with Microsoft Entra ID.
+Uses a backend-mediated Auth0 flow federated with Microsoft Entra ID.
 
 1. User selects "Continue with Microsoft".
-2. `AuthFacade.login()` starts Auth0 Universal Login (Authorization Code + PKCE).
-3. Entra ID authenticates the user.
-4. Auth0 returns tokens to the callback.
-5. `MicrosoftProfileAdapter` normalizes raw claims into a `UserSessionDTO`.
-6. Session is held in memory only (`authSlice` in Redux).
-7. Protected API calls attach the access token through the HTTP interceptor.
+2. `AuthFacade.beginMicrosoftLogin()` redirects the browser to `/api/auth/microsoft/login`.
+3. The backend starts the Auth0 Universal Login flow and federates to Microsoft Entra ID.
+4. After the callback completes, the backend persists session state in secure cookies.
+5. The frontend calls `AuthFacade.getCurrentSession()` to hydrate in-memory session state.
+6. Protected API calls use `HttpClientFacade.authFetch()` with `withCredentials`.
+7. On `401`, the HTTP client attempts `/api/auth/refresh`; if that fails, the session is cleared and the user is redirected to login.
 
+[AuthFacade.ts](/app/src/auth/AuthFacade.ts)
 ```TypeScript
-// app/auth/AuthFacade.ts
-export class AuthFacade {
-  async login(): Promise<void> { /* starts Auth0 PKCE flow */ }
-  async logout(): Promise<void> { /* terminates session */ }
-  async getAccessToken(): Promise<string> { /* silent refresh */ }
-  getSession(): UserSessionDTO { /* returns in-memory session */ }
-}
-export const authFacade = AuthFacade.getInstance();
+export type AuthFacade = AuthServiceFacade;
+export const authFacade: AuthFacade = authServiceFacade;
 ```
 
-Access tokens stay in memory (Redux); the refresh token sits in an `HttpOnly`, `Secure`, `SameSite=Strict` cookie that JavaScript cannot read. MFA is enforced for all roles through Auth0 Adaptive MFA.
+The SPA never reads or stores bearer tokens directly. Session cookies stay `HttpOnly`, `Secure`, and same-site, while the frontend keeps only a normalized session snapshot in memory through `sessionStore` and `SessionProvider`.
 
 ### 1.4.3 Authorization
 
@@ -744,24 +740,24 @@ localStorage.setItem("language", "en");
 ```
 
 **Enforcement**
-- Keep authentication credentials out of `localStorage` and `sessionStorage` — enforced by ESLint ban rule.
+- Keep authentication credentials out of `localStorage` and `sessionStorage`.
 - Clear in-memory session data on logout and on 401 responses.
 - Review pull requests for any usage of `localStorage` or `sessionStorage` with token-shaped keys.
 
 ### 1.4.6 Logout
 Responsibilities:
 - Call `AuthFacade.logout()`
-- Clear Redux `authSlice` session
-- Clear in-memory session data
+- Clear `sessionStore` / `SessionProvider` state
+- Clear any derived in-memory session data
 - Redirect to login
 
-[useAuth.ts](/app/src/components/hooks/useAuth.ts)
+[useLogout.ts](/app/src/components/hooks/useLogout.ts)
 
 ### 1.4.7 Session Expiration
 
 When the backend returns 401 Unauthorized:
-- HTTP interceptor detects it
-- Silent token refresh is attempted via `getAccessTokenSilently()`
+- `HttpClientFacade.authFetch()` detects it
+- Silent session refresh is attempted via `POST /api/auth/refresh`
 - If refresh fails, `sessionManager.handleUnauthorized()` clears the session
 - User is redirected to login with a session-expired message
 
@@ -772,15 +768,15 @@ The frontend uses a five-layer architecture with clear responsibilities and down
 **Architecture diagram:**
 ![Layerd design diagram](Media/frontend-layerded-design.png)
 
-**Layer 1 — Presentation:** Pages and components render data and capture input. They do not call APIs directly. Next.js App Router and route guards protect navigation.
+**Layer 1 - Presentation:** Pages and components render data and capture input. They do not call APIs directly. React Router route guards protect navigation.
 
-**Layer 2 — Application:** Hooks orchestrate use cases end to end. Standard flow: validate input → call service → dispatch Redux actions.
+**Layer 2 - Application:** Hooks orchestrate use cases end to end. Standard flow: validate input -> call facade/service -> update session or feature state.
 
-**Layer 3 — Domain Logic:** Zod schemas validate every API response. Permission checks use `usePolicies()`, not direct role comparisons. Policies define roles and permissions.
+**Layer 3 - Domain Logic:** Zod schemas validate every API response. Permission checks use `usePolicies()`, not direct role comparisons. Policies define roles and permissions.
 
-**Layer 4 — Services:** `HttpClientFacade` and `AuthFacade` are the only network entry points. Services call the backend and Auth0; they render no UI.
+**Layer 4 - Services:** `HttpClientFacade` and `AuthFacade` are the only network entry points. Services call the backend, session endpoints, and auth redirect endpoints; they render no UI.
 
-**Layer 5 — Infrastructure:** Shared foundation: Redux store, `SessionProvider`, design tokens, i18n, observability utilities.
+**Layer 5 - Infrastructure:** Shared foundation: `sessionStore`, `SessionProvider`, design tokens, i18n, observability utilities.
 
 **Folder mapping:**
 
@@ -790,8 +786,8 @@ The frontend uses a five-layer architecture with clear responsibilities and down
 | `app/src/components/atoms/`, `molecules/`, `organisms/`, `templates/` | Layer 1 | Atomic UI components |
 | `app/src/components/hooks/` | Layer 2 | Application orchestration hooks |
 | `app/src/models/`, `app/src/validation/`, `app/src/auth/policies/` | Layer 3 | Domain types, Zod schemas, access policies |
-| `app/src/services/`, `app/src/auth/AuthFacade.ts` | Layer 4 | HTTP facade, auth service, interceptors |
-| `app/src/state/`, `app/src/utils/`, `app/src/settings/`, `app/src/components/i18n/`, `app/src/components/styles/` | Layer 5 | Redux store, logger, settings, i18n, tokens |
+| `app/src/services/`, `app/src/auth/AuthFacade.ts`, `app/src/auth/authService.ts` | Layer 4 | HTTP facade, auth service, interceptors |
+| `app/src/state/`, `app/src/utils/`, `app/src/components/i18n/`, `app/src/components/styles/` | Layer 5 | Session store, logger, i18n, tokens |
 
 **Dependency rules:**
 - Presentation can only call Application (hooks) and Infrastructure.
@@ -802,11 +798,11 @@ The frontend uses a five-layer architecture with clear responsibilities and down
 
 **Example: Login flow**
 
-`LoginPage` → `useAuth().login()` → `AuthFacade.login()` (Auth0 PKCE) → `MicrosoftProfileAdapter.adapt()` → `UserSessionDTO` → `SessionManager.setSession()` → Redux `authSlice` update.
+`LoginPage` -> `useLogin().login()` -> `applicationServiceFacade.auth.login()` -> `POST /api/auth/login` -> `AuthFacade.getCurrentSession()` -> `sessionManager.setSession()` -> `sessionStore` / `SessionProvider` update.
 
 **Example: Certification polling flow**
 
-`DocumentUploadPage` → `useCertificationProgress()` subscription → `CertificationPollingManager.startPolling()` → `PollingOrchestrator` → `GET /api/trust-record-applications/{id}/status` → `certificationPollingStore.patchState()` → UI update.
+`DocumentUploadPage` -> `useCertificationProgress()` subscription -> `CertificationPollingManager.startPolling()` -> `PollingOrchestrator` -> `GET /api/trust-record-applications/{id}/status` -> `certificationPollingStore.patchState()` -> UI update.
 
 ## 1.6 Design patterns
 
@@ -814,7 +810,7 @@ The frontend uses a five-layer architecture with clear responsibilities and down
 The following classes currently use the singleton pattern:
 - [logger.ts](/app/src/utils/logger.ts) — `Logger`
 - [error-handler.ts](/app/src/utils/error-handler.ts) — `ExceptionHandler`
-- [AuthFacade.ts](/app/src/auth/AuthFacade.ts) — `AuthFacade`
+- [AuthFacade.ts](/app/src/auth/AuthFacade.ts) - `authFacade`
 - [sessionManager.ts](/app/src/state/sessionManager.ts) — `SessionManager`
 - [certificationPollingStore.ts](/app/src/state/certificationPollingStore.ts) — `CertificationPollingStore`
 - [certificationPollingManager.ts](/app/src/state/certificationPollingManager.ts) — `CertificationPollingManager`
@@ -911,28 +907,29 @@ class XStore {
 }
 ```
 
-### Proxy — Auth Middleware
-- [AuthFacade.ts](/app/src/auth/AuthFacade.ts)
-- [AuthMiddleware.ts](/app/src/auth/AuthMiddleware.ts)
+### Proxy / Interceptor - Authenticated HTTP
 - [client.ts](/app/src/services/client.ts)
+- [httpInterceptors.ts](/app/src/services/httpInterceptors.ts)
+- [unauthorizedHandlingStrategy.ts](/app/src/services/unauthorizedHandlingStrategy.ts)
 
-`AuthMiddleware` sits between services and the raw HTTP client, attaching the bearer token and handling 401 cases. Services call `HttpClientFacade` and never attach tokens themselves.
+Authenticated requests are centralized in the HTTP client. `authFetch()` performs cookie-based requests, retries once through `/api/auth/refresh` when configured, and delegates final `401` handling to the unauthorized-handling strategy.
 
 ```ts
-class AuthMiddleware {
-  // <<Proxy>>
-  async intercept(request: Request): Promise<Request> { /* attaches token */ }
-  private async refreshTokenIfExpired(): Promise<void> { /* silent refresh */ }
-  private handleUnauthorized(): void { /* clears session, redirects */ }
+class SourceHttpClient {
+  async authFetch(input: string, init?: RequestInit): Promise<Response> {
+    // Performs authenticated request, refreshes session on 401,
+    // then clears session and redirects if still unauthorized.
+  }
 }
 ```
 
-### Facade Pattern (Hooks → Auth + HTTP)
+### Facade Pattern (Hooks -> Auth + HTTP)
 Expose a single service access surface for hooks while keeping auth and HTTP implementation details behind facades.
 
 #### Files to keep aligned
 - [client.ts](/app/src/services/client.ts)
 - [AuthFacade.ts](/app/src/auth/AuthFacade.ts)
+- [authService.ts](/app/src/auth/authService.ts)
 - [applicationFacade.ts](/app/src/services/applicationFacade.ts)
 - [useApplicationServices.ts](/app/src/components/hooks/useApplicationServices.ts)
 
@@ -941,18 +938,23 @@ Expose a single service access surface for hooks while keeping auth and HTTP imp
 HTTP facade contract:
 ```ts
 export interface HttpClientFacade {
-  get<T>(url: string, schema: ZodSchema<T>): Promise<T>;
-  post<T>(url: string, body: unknown, schema: ZodSchema<T>): Promise<T>;
+  fetch(input: string, init?: RequestInit): Promise<Response>;
+  authFetch(input: string, init?: RequestInit): Promise<Response>;
+  json<T>(input: string, init?: RequestInit): Promise<T>;
+  authJson<T>(input: string, init?: RequestInit): Promise<T>;
 }
 ```
 
 Auth facade contract:
 ```ts
 export interface AuthFacade {
-  login(): Promise<void>;
+  login(input: LoginInput): Promise<AuthSession | null>;
   logout(): Promise<void>;
-  getAccessToken(): Promise<string>;
-  getSession(): UserSessionDTO;
+  beginMicrosoftLogin(returnUrl?: string): void;
+  refreshSession(): Promise<AuthSession | null>;
+  requestPasswordReset(email: string, redirectTo?: string): Promise<void>;
+  resetPassword(accessToken: string, refreshToken: string, newPassword: string): Promise<void>;
+  getCurrentSession(): Promise<AuthSession | null>;
 }
 ```
 
@@ -961,18 +963,16 @@ App facade contract:
 export interface ApplicationServiceFacade {
   readonly auth: AuthFacade;
   readonly http: HttpClientFacade;
-  readonly marketplace: MarketplaceService;
-  readonly trustRecord: TrustRecordService;
 }
 ```
 
 #### Checklist for New Agents
 - Hooks import only `useApplicationServices` for service access.
-- `AuthFacade` is the only Auth0 entry point.
+- `AuthFacade` is the only frontend auth entry point.
 - `HttpClientFacade` is the only Axios/fetch entry point.
-- New features are added by extending facades, not by importing Auth0 or Axios directly in hooks.
+- New features are added by extending facades, not by importing Axios or hard-coding auth redirects directly in hooks.
 
-### Strategy — Polling Interval Selection
+### Strategy ? Polling Interval Selection
 [IPollingStrategy.ts](/app/polling/strategies/IPollingStrategy.ts), [FixedIntervalStrategy.ts](/app/polling/strategies/FixedIntervalStrategy.ts), [ExponentialBackoffStrategy.ts](/app/polling/strategies/ExponentialBackoffStrategy.ts), [PollingOrchestrator.ts](/app/polling/PollingOrchestrator.ts)
 
 ```ts
@@ -1028,16 +1028,14 @@ src/
 │   ├── templates/    AuthenticatedLayout, PublicLayout
 │   ├── pages/        LoginPage, MarketplacePage, InvestmentDetailPage,
 │   │                 DocumentUploadPage, ExpertValidationPage
-│   ├── hooks/        useApplicationServices, useAuth, useMarketplace,
-│   │                 useDocumentUpload, useCertificationProgress,
-│   │                 useExpertValidation, useInvestmentDetail,
-│   │                 usePermissions, usePolicies, useSession
+|   |-- hooks/        useApplicationServices, useLogin, useLogout,
+|   |                 usePermissions, usePolicies, useSession,
+|   |                 useTheme
 │   ├── i18n/         config.ts, I18nProvider.tsx, en.json, es.json
 │   └── styles/       tokens.ts, theme.ts, breakpoints.ts, globals.css, ThemeProvider.tsx
 │
 ├── auth/
-│   ├── AuthFacade.ts · AuthMiddleware.ts · AuthAuditQueue.ts · authConfig.ts
-│   ├── adapters/     MicrosoftProfileAdapter.ts
+|   |-- AuthFacade.ts, authService.ts, auth-schemas.ts, AuthProvider.tsx
 │   ├── guards/       AuthGuard.tsx, GuestGuard.tsx, PolicyGuard.tsx
 │   └── policies/     roles.ts, permissions.ts, rolePermissions.ts, accessPolicy.ts
 │
@@ -1052,8 +1050,7 @@ src/
 ├── state/
 │   ├── certification.types.ts, certificationPollingStore.ts, certificationPollingManager.ts
 │   ├── session.types.ts, sessionManager.ts, SessionProvider.tsx
-│   ├── StoreProvider.tsx, store.ts, hooks.ts
-│   └── slices/       authSlice.ts, marketplaceSlice.ts, certificationSlice.ts, validationSlice.ts
+|   |-- sessionStore.ts
 │
 ├── contracts/        openapi.json, openapi.example.json
 ├── models/           api.types.ts (generated), SME.ts, TrustRecord.ts, DocumentUpload.ts, …
@@ -1110,10 +1107,9 @@ src/
 - Transport security: HTTPS enforced at Azure API Management for all public endpoints
 - Authentication:
   - Users authenticate through Auth0 Universal Login federated with Microsoft Entra ID
-  - The backend validates JWT bearer tokens issued for the configured Auth0 audience
-  - JWT signing algorithm: RS256
-  - JWT tokens are required for all protected endpoints
-  - Client secrets are never embedded in JWTs or returned to the browser
+  - The backend owns the session and issues secure `HttpOnly` cookies to the browser
+  - Frontend requests use `withCredentials`; the SPA does not persist or attach bearer tokens directly
+  - Client secrets are never returned to the browser
 - Encryption at rest:
   - Azure SQL Database uses Transparent Data Encryption (TDE) with service-managed keys
   - Reference: https://learn.microsoft.com/en-us/azure/azure-sql/database/security-overview?view=azuresql#transparent-data-encryption-encryption-at-rest-with-service-managed-keys
@@ -2687,14 +2683,14 @@ Developers may exclude generated OpenAPI files, DTOs that only carry data, and t
 
 ### User authentication and session validation
 1. The user authenticates through Auth0 Universal Login federated with Microsoft Entra ID.
-2. Auth0 completes the Authorization Code + PKCE flow and returns tokens to the configured QuietWealth callback.
-3. The frontend sends the Auth0 access token as a Bearer token to protected backend endpoints.
-4. `IdentityAccessService` validates issuer, audience, signature, expiration, roles, permissions, and session state.
+2. The backend completes the federated callback flow and establishes the QuietWealth session.
+3. The frontend calls protected backend endpoints with secure cookies using `withCredentials`.
+4. `IdentityAccessService` validates session state, roles, permissions, and tenant access before continuing.
 5. The backend creates or refreshes session metadata through [`IUserSessionRepository`](/server/QuietWealth.Backend/domains/identity-access/repositories/IUserSessionRepository.cs).
-6. Protected endpoints validate the JWT and permission policies before running business logic.
+6. Protected endpoints validate the active session and permission policies before running business logic.
 7. Logout clears the local session, delegates logout to Auth0, and emits `UserLoggedOut`.
 
-Errors: `401 Unauthorized` for invalid or expired tokens, `403 Forbidden` for missing permissions, Auth0 callback failures return the user to the login screen.
+Errors: `401 Unauthorized` for invalid or expired sessions, `403 Forbidden` for missing permissions, Auth0 callback failures return the user to the login screen.
 
 ---
 
@@ -4382,13 +4378,13 @@ Mitigation strategy:
 
 Authentication Flow:
 1. User selects "Continue with Microsoft"
-2. Frontend redirects user to Auth0 Universal Login
-3. Auth0 federates authentication with Microsoft
+2. Frontend redirects the browser to the backend Microsoft login endpoint
+3. The backend starts Auth0 Universal Login and federates authentication with Microsoft
 4. Identity provider authenticates the user
-5. Auth0 returns the authorization code to the configured QuietWealth callback
-6. Auth0 SDK completes the PKCE token exchange and obtains the access token and ID token
-7. Frontend sends the access token as a Bearer token to the backend
-8. Backend validates issuer, audience, signature, expiration, roles, and permissions
+5. Auth0 returns control to the configured QuietWealth callback
+6. The backend completes the callback flow and establishes the QuietWealth session
+7. Frontend sends authenticated requests with secure cookies via `withCredentials`
+8. Backend validates session state, roles, permissions, and tenant access
 9. User profile and session metadata are created or updated internally
 10. User gains access to the SME financial trust platform
 
@@ -4398,7 +4394,7 @@ Authentication Flow:
 Used to abstract all third-party authentication providers behind a single authentication interface.
 
 Example:
-- AuthFacade.authenticateUser()
+- AuthFacade.beginMicrosoftLogin()
 
 #### DTOs (Data Transfer Objects)
 Used for authentication request and response encapsulation.

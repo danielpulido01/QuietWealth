@@ -1,5 +1,5 @@
 ﻿import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { apiFetch, authFetch, buildApiUrl } from "../services/client";
+import { apiFetch, authFetch } from "../services/client";
 import {
   authUserSchema,
   forgotPasswordRequestSchema,
@@ -7,6 +7,7 @@ import {
   resetPasswordRequestSchema,
 } from "./auth-schemas";
 import { parseWithSchema } from "../data-validation/schema-validator";
+import { authFacade } from "./AuthFacade";
 
 type User = {
   userId: string | null;
@@ -132,12 +133,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const loginWithMicrosoft = useCallback(() => {
     setIsLoading(true);
-
-    const returnUrl = `${window.location.origin}${window.location.pathname}`;
-    const loginUrl = new URL(buildApiUrl("/api/auth/microsoft/login"), window.location.origin);
-    loginUrl.searchParams.set("returnUrl", returnUrl);
-
-    window.location.assign(loginUrl.toString());
+    authFacade.beginMicrosoftLogin();
   }, []);
 
   const logout = useCallback(async () => {

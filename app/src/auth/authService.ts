@@ -4,7 +4,7 @@ import {
   loginRequestSchema,
   resetPasswordRequestSchema,
 } from "./auth-schemas";
-import { httpClientFacade } from "../services/client";
+import { buildApiUrl, httpClientFacade } from "../services/client";
 import type { AuthSession } from "../state/session.types";
 import { sessionManager } from "../state/sessionManager";
 
@@ -86,6 +86,17 @@ export class AuthService {
     } finally {
       sessionManager.clearSession();
     }
+  }
+
+  beginMicrosoftLogin(returnUrl?: string): void {
+    if (typeof window === "undefined") {
+      throw new AuthServiceError("Microsoft login can only be started in the browser.");
+    }
+
+    const resolvedReturnUrl = returnUrl ?? `${window.location.origin}${window.location.pathname}`;
+    const loginUrl = new URL(buildApiUrl("/api/auth/microsoft/login"), window.location.origin);
+    loginUrl.searchParams.set("returnUrl", resolvedReturnUrl);
+    window.location.assign(loginUrl.toString());
   }
 
   async refreshSession(): Promise<AuthSession | null> {
@@ -172,6 +183,7 @@ export const authService = AuthService.getInstance();
 export interface AuthServiceFacade {
   login(input: LoginInput): Promise<AuthSession | null>;
   logout(): Promise<void>;
+  beginMicrosoftLogin(returnUrl?: string): void;
   refreshSession(): Promise<AuthSession | null>;
   requestPasswordReset(email: string, redirectTo?: string): Promise<void>;
   resetPassword(accessToken: string, refreshToken: string, newPassword: string): Promise<void>;
@@ -200,6 +212,10 @@ class DefaultAuthServiceFacade implements AuthServiceFacade {
 
   logout() {
     return authService.logout();
+  }
+
+  beginMicrosoftLogin(returnUrl?: string) {
+    return authService.beginMicrosoftLogin(returnUrl);
   }
 
   refreshSession() {
