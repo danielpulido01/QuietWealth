@@ -1099,9 +1099,9 @@ src/
   - Document intake service
   - Certification validation service
   - Marketplace read service
+  - Investment detail service
   - Audit observability service
-  - Retention archival service
-  - <<Agregar otros servicios si el MVP los requiere>>
+  - Retention archival service 
 
 ## Security
 - Transport security: HTTPS enforced at Azure API Management for all public endpoints
@@ -2831,6 +2831,7 @@ flowchart TD
         DIS["DocumentIntake\nService"]
         CVS["CertificationValidation\nService"]
         MRS["MarketplaceRead\nService"]
+        IDS["InvestmentDetail\nService"]
         AOS["AuditObservability\nService"]
         RAS["RetentionArchival\nService"]
     end
@@ -3052,6 +3053,10 @@ The following backend artifacts use the repository pattern:
   - `IRetentionRecordRepository`
 - [domains/marketplace/repositories/](/server/QuietWealth.Backend/domains/marketplace/repositories/)
   - `IMarketplaceListingRepository`
+- [domains/certification-validation/repositories/](/server/QuietWealth.Backend/domains/certification-validation/repositories/)
+  - `ICertificationReviewRepository`
+- [domains/identity-access/repositories/](/server/QuietWealth.Backend/domains/identity-access/repositories/)
+  - `ISMEProfileRepository`
 
 ##### When to apply here
 Apply only if all are true:
@@ -3174,7 +3179,7 @@ The following backend artifacts use the facade pattern:
 - [domains/identity-access/services/](/server/QuietWealth.Backend/domains/identity-access/services/)
   - `IdentityAccessFacade`
 - [domains/document-intake/services/](/server/QuietWealth.Backend/domains/document-intake/services/)
-  - `DocumentUploadFacade`
+  - `DocumentIntakeFacade`
 - [domains/audit-observability/services/](/server/QuietWealth.Backend/domains/audit-observability/services/)
   - `NotificationFacade`
 
@@ -3195,7 +3200,7 @@ Skip facades for:
 ##### Implementation recipe
 
 ```csharp
-public interface IDocumentUploadFacade
+public interface IDocumentIntakeFacade
 {
     Task<UploadPermissionDto> RequestUploadPermissionAsync(
         Guid batchId,
@@ -3211,11 +3216,11 @@ public interface IDocumentIntakeService
         CancellationToken cancellationToken);
 }
 
-public sealed class DocumentUploadFacade : IDocumentUploadFacade
+public sealed class DocumentIntakeFacade : IDocumentIntakeFacade
 {
     private readonly IDocumentIntakeService intake;
 
-    public DocumentUploadFacade(IDocumentIntakeService intake) => this.intake = intake;
+    public DocumentIntakeFacade(IDocumentIntakeService intake) => this.intake = intake;
 
     public Task<UploadPermissionDto> RequestUploadPermissionAsync(
         Guid batchId,
@@ -3223,7 +3228,6 @@ public sealed class DocumentUploadFacade : IDocumentUploadFacade
         CancellationToken cancellationToken) =>
         intake.CreateUploadPermissionAsync(batchId, fileName, cancellationToken);
 }
-```
 
 ##### Migration steps for a new facade
 
