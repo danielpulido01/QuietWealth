@@ -1713,7 +1713,602 @@ Marketplace cache TTL: 5 min. Invalidate keys when certification status or marke
 | 100x | Split marketplace read model from transactional SQL, partition document queues by tenant, use Azure Functions Premium plan, add Redis clustering, move APIM to Premium multi-region |
 
 
-## Backend Testing and Quality Strategy
+## Backend Error Handling Standard
+
+### Standard response contract
+
+#### Success responses
+
+All successful responses with a body must use a shared envelope:
+
+```json
+{
+  "data": {},
+  "correlationId": "01JZ2JQ7HY7CF6J9P9M6S7Q0ZK"
+}
+```
+
+Standard shape is found in [ApiResponse.cs](server/QuietWealth.Backend/shared/Api/ApiResponse.cs):
+```csharp
+namespace QuietWealth.Bakend.Shared.Api;
+
+public sealed record ApiResponse<T>(T Data, string CorrelationId);
+```
+
+Rules:
+- `200 OK`, `201 Created`, and `202 Accepted` return `ApiResponse<T>`.
+- `204 No Content` returns no body.
+- `X-Correlation-Id` must also be returned as a response header.
+
+#### Error responses
+
+All error responses must use RFC 7807 `ProblemDetails` with extensions.
+
+Content type:
+```text
+application/problem+json
+```
+
+Base shape:
+```json
+{
+  "type": "https://api.quietwealth/errors/domain-rule-violation",
+  "title": "Domain rule violated",
+  "status": 409,
+  "detail": "The document batch cannot be archived because it is still processing.",
+  "instance": "/api/retention/archive",
+  "correlationId": "01JZ2JQ7HY7CF6J9P9M6S7Q0ZK",
+  "errorCode": "retention.batch_processing",
+  "category": "domain"
+}
+```
+
+Required extension fields:
+- `correlationId`: stable per request, also returned in `X-Correlation-Id`
+- `errorCode`: stable machine-readable code owned by the domain or shared layer
+- `category`: `validation`, `domain`, `infrastructure`, `authorization`, `not-found`, `conflict`, or `unexpected`
+
+Optional extension fields:
+- `errors`: validation dictionary for field-level failures
+- `retryable`: `true` for transient infrastructure failures
+
+Do not include:
+- stack traces
+- SQL errors
+- blob paths
+- connection strings
+- raw vendor exception messages
+- secrets, tokens, or internal identifiers that are not safe for clients
+
+#### Correlation ID rules
+
+Each request must have a correlation ID.
+Rules:
+- Read `X-Correlation-Id` from the incoming request if present and valid.
+- If it is missing, generate one in middleware.
+- Store it in `HttpContext.Items` or a scoped accessor.
+- Return it in:
+  - `X-Correlation-Id` response header
+  - every `ApiResponse<T>`
+  - every `ProblemDetails` payload
+- Include it in structured logs and dependency telemetry.
+- Reuse the same value when publishing domain events or outbox messages triggered by the request.
+- `correlationId` is the business-visible identifier for support and debugging.
+- `traceId` may still exist in telemetry, but clients should rely on `correlationId`.
+
+### Error categories and HTTP mapping
+
+#### Validation errors
+
+Use for:
+- malformed JSON
+- missing required fields
+- invalid enum values
+- length, range, format, and schema violations
+- request DTO validation failures
+
+HTTP status:
+- `400 Bad Request`
+
+Payload:
+- `ValidationProblemDetails`
+- must include `correlationId`, `errorCode`, and `category = "validation"`
+- must include `errors`
+
+Example:
+
+```json
+{
+  "type": "https://api.quietwealth/errors/validation",
+  "title": "One or more validation errors occurred.",
+  "status": 400,
+  "correlationId": "01JZ2JQ7HY7CF6J9P9M6S7Q0ZK",
+  "errorCode": "validation.failed",
+  "category": "validation",
+  "errors": {
+    "fileNames": [
+      "At least one file is required."
+    ],
+    "ownerUserId": [
+      "The owner user id field is required."
+    ]
+  }
+}
+```
+
+#### Domain errors
+Use for business rules owned by a bounded context.
+
+Subtypes:
+- `DomainNotFoundException` -> `404 Not Found`
+- `DomainConflictException` -> `409 Conflict`
+- `DomainRuleViolationException` -> `409 Conflict`
+- `DomainForbiddenException` -> `403 Forbidden`
+
+Rules:
+
+- `detail` may be shown to the user only if it is safe and business-oriented.
+- `errorCode` must be stable and domain-specific.
+
+Examples:
+
+- `document.batch_not_found`
+- `identity.invalid_otp`
+- `retention.legal_hold_enabled`
+
+### 4.2.1 Authentication and authorization errors
+
+These are not generic domain errors and must be handled explicitly by the auth pipeline.
+
+Authentication failure:
+
+- use `401 Unauthorized`
+- return `ProblemDetails`
+- include `WWW-Authenticate` when bearer authentication is in use
+- use a stable code such as `auth.unauthorized`
+- do not reveal whether the username, password, OTP, or token was the exact failure point
+
+Authorization failure:
+
+- use `403 Forbidden`
+- return `ProblemDetails`
+- use a stable code such as `auth.forbidden`
+- `detail` must remain safe and must not disclose hidden resources or policies beyond what the caller is allowed to know
+
+#### Infrastructure errors
+
+Use for failures in:
+
+- Azure SQL
+- Blob Storage
+- Redis
+- Notification Hub
+- Auth0 or Microsoft Entra integrations
+- network, timeout, and dependency availability failures
+
+HTTP status:
+
+- `503 Service Unavailable` for transient dependency failures
+- `500 Internal Server Error` for non-transient infrastructure failures that cannot be classified better
+
+Rules:
+
+- Never expose the raw dependency exception message.
+- Use a generic `title` and safe `detail`.
+- Include `retryable = true` when the client can retry later.
+
+Example codes:
+
+- `infrastructure.azure_sql_unavailable`
+- `infrastructure.blob_timeout`
+- `infrastructure.auth_provider_unavailable`
+
+#### Unexpected errors
+
+Use when the exception is unknown or not mapped.
+
+HTTP status:
+
+- `500 Internal Server Error`
+
+Rules:
+
+- return a generic message
+- log the full exception internally with `correlationId`
+- do not leak implementation details
+
+#### Additional protocol-level errors
+
+These are not business failures, but the API must define them so implementations do not invent inconsistent responses later.
+
+- `413 Payload Too Large`: file upload exceeds allowed size
+- `415 Unsupported Media Type`: request content type is unsupported
+- `429 Too Many Requests`: throttling or abuse protection
+- `412 Precondition Failed`: optimistic concurrency or conditional request failed
+
+Recommended error codes:
+
+- `request.payload_too_large`
+- `request.unsupported_media_type`
+- `request.rate_limited`
+- `request.precondition_failed`
+
+For `429`, include `Retry-After` when available.
+
+### API response rules by scenario
+
+| Scenario | Status | Response body |
+|---|---|---|
+| Read successful | `200` | `ApiResponse<T>` |
+| Resource created | `201` | `ApiResponse<T>` |
+| Async process accepted | `202` | `ApiResponse<T>` |
+| Successful command with no body | `204` | No body |
+| Request validation failed | `400` | `ValidationProblemDetails` |
+| Authentication failed | `401` | `ProblemDetails` |
+| Authenticated but not allowed | `403` | `ProblemDetails` |
+| Requested domain resource not found | `404` | `ProblemDetails` |
+| Business rule or state conflict | `409` | `ProblemDetails` |
+| Concurrency or precondition failure | `412` | `ProblemDetails` |
+| Request payload too large | `413` | `ProblemDetails` |
+| Unsupported content type | `415` | `ProblemDetails` |
+| Rate limited | `429` | `ProblemDetails` |
+| Downstream dependency unavailable | `503` | `ProblemDetails` |
+| Unhandled server error | `500` | `ProblemDetails` |
+
+Additional rules:
+
+- Controllers must not build ad hoc error payloads.
+- Controllers must not catch exceptions unless they are translating a known case into a better domain exception.
+- Services may throw typed exceptions; the global handler maps them to HTTP.
+- Repositories and infrastructure adapters must wrap vendor exceptions into typed infrastructure exceptions before they cross into the service layer.
+
+### Standard exception model
+
+Shared exceptions:
+[AppException.cs](server/QuietWealth.Backend/shared/Errors/AppException.cs:1)
+```csharp
+namespace QuietWealth.Bakend.Shared.Errors;
+
+public abstract class AppException(
+    string message,
+    string errorCode) : Exception(message)
+{
+    public string ErrorCode { get; } = errorCode;
+}
+
+public abstract class DomainException(
+    string message,
+    string errorCode) : AppException(message, errorCode);
+
+public sealed class DomainNotFoundException(
+    string message,
+    string errorCode) : DomainException(message, errorCode);
+
+public sealed class DomainConflictException(
+    string message,
+    string errorCode) : DomainException(message, errorCode);
+
+public sealed class DomainRuleViolationException(
+    string message,
+    string errorCode) : DomainException(message, errorCode);
+
+public sealed class DomainForbiddenException(
+    string message,
+    string errorCode) : DomainException(message, errorCode);
+
+public sealed class InfrastructureException(
+    string message,
+    string errorCode,
+    bool retryable = false) : AppException(message, errorCode)
+{
+    public bool Retryable { get; } = retryable;
+}
+```
+
+### Global exception handler example
+
+Implement one global handler instead of repeating response logic inside controllers.
+
+[GlobalExceptionHandler.cs](server/QuietWealth.Backend/shared/Api/GlobalExceptionHandler.cs:1)
+```csharp
+using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.Mvc;
+using QuietWealth.Bakend.Shared.Errors;
+
+namespace QuietWealth.Bakend.Shared.Api;
+
+public sealed class GlobalExceptionHandler(
+    ILogger<GlobalExceptionHandler> logger) : IExceptionHandler
+{
+    public async ValueTask<bool> TryHandleAsync(
+        HttpContext httpContext,
+        Exception exception,
+        CancellationToken cancellationToken)
+    {
+        var correlationId =
+            httpContext.Items[CorrelationIdMiddleware.HeaderName]?.ToString()
+            ?? httpContext.TraceIdentifier;
+
+        logger.LogError(
+            exception,
+            "Unhandled exception. CorrelationId: {CorrelationId}",
+            correlationId);
+
+        var (status, title, type, category, detail, errorCode, retryable) = exception switch
+        {
+            DomainNotFoundException ex => (
+                StatusCodes.Status404NotFound,
+                "Resource not found",
+                "https://api.quietwealth/errors/domain-not-found",
+                "not-found",
+                ex.Message,
+                ex.ErrorCode,
+                (bool?)null),
+
+            DomainConflictException ex => (
+                StatusCodes.Status409Conflict,
+                "Conflict",
+                "https://api.quietwealth/errors/domain-conflict",
+                "conflict",
+                ex.Message,
+                ex.ErrorCode,
+                (bool?)null),
+
+            DomainRuleViolationException ex => (
+                StatusCodes.Status409Conflict,
+                "Domain rule violated",
+                "https://api.quietwealth/errors/domain-rule-violation",
+                "domain",
+                ex.Message,
+                ex.ErrorCode,
+                (bool?)null),
+
+            DomainForbiddenException ex => (
+                StatusCodes.Status403Forbidden,
+                "Forbidden",
+                "https://api.quietwealth/errors/forbidden",
+                "authorization",
+                ex.Message,
+                ex.ErrorCode,
+                (bool?)null),
+
+            InfrastructureException ex => (
+                ex.Retryable ? StatusCodes.Status503ServiceUnavailable : StatusCodes.Status500InternalServerError,
+                ex.Retryable ? "Dependency unavailable" : "Infrastructure failure",
+                ex.Retryable
+                    ? "https://api.quietwealth/errors/dependency-unavailable"
+                    : "https://api.quietwealth/errors/infrastructure",
+                "infrastructure",
+                ex.Retryable
+                    ? "A required service is temporarily unavailable. Try again later."
+                    : "The request could not be completed.",
+                ex.ErrorCode,
+                ex.Retryable),
+
+            _ => (
+                StatusCodes.Status500InternalServerError,
+                "Internal server error",
+                "https://api.quietwealth/errors/unexpected",
+                "unexpected",
+                "The request could not be completed.",
+                "unexpected.internal_server_error",
+                (bool?)null)
+        };
+
+        var problemDetails = new ProblemDetails
+        {
+            Status = status,
+            Title = title,
+            Type = type,
+            Detail = detail,
+            Instance = httpContext.Request.Path
+        };
+
+        problemDetails.Extensions["correlationId"] = correlationId;
+        problemDetails.Extensions["errorCode"] = errorCode;
+        problemDetails.Extensions["category"] = category;
+
+        if (retryable is not null)
+        {
+            problemDetails.Extensions["retryable"] = retryable.Value;
+        }
+
+        httpContext.Response.StatusCode = status;
+
+        await httpContext.Response.WriteAsJsonAsync(problemDetails, cancellationToken);
+        return true;
+    }
+}
+```
+
+Registration example:
+[Program.cs](server/QuietWealth.Backend/Program.cs:18)
+```csharp
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+
+var app = builder.Build();
+
+app.UseExceptionHandler();
+```
+
+Important rule:
+
+- `OperationCanceledException` and request-abort scenarios must not be reported as ordinary `500` server errors. They should be logged at low severity or ignored when the client disconnected.
+
+### Validation response example
+
+The API must customize model-state failures so validation also returns the shared extensions.
+
+[Program.cs](/server/QuietWealth.Backend/Program.cs:19)
+```csharp
+using Microsoft.AspNetCore.Mvc;
+
+builder.Services.AddControllers()
+    .ConfigureApiBehaviorOptions(options =>
+    {
+        options.InvalidModelStateResponseFactory = context =>
+        {
+            var correlationId =
+                context.HttpContext.Items[CorrelationIdMiddleware.HeaderName]?.ToString()
+                ?? context.HttpContext.TraceIdentifier;
+
+            var problemDetails = new ValidationProblemDetails(context.ModelState)
+            {
+                Type = "https://api.quietwealth/errors/validation",
+                Title = "One or more validation errors occurred.",
+                Status = StatusCodes.Status400BadRequest,
+                Instance = context.HttpContext.Request.Path
+            };
+
+            problemDetails.Extensions["correlationId"] = correlationId;
+            problemDetails.Extensions["errorCode"] = "validation.failed";
+            problemDetails.Extensions["category"] = "validation";
+
+            return new BadRequestObjectResult(problemDetails)
+            {
+                ContentTypes = { "application/problem+json" }
+            };
+        };
+    });
+```
+
+### Correlation middleware example
+
+[CorrelationIdMiddleware.cs](server/QuietWealth.Backend/shared/Api/CorrelationIdMiddleware.cs:1)
+```csharp
+namespace QuietWealth.Bakend.Shared.Api;
+
+public sealed class CorrelationIdMiddleware(RequestDelegate next)
+{
+    public const string HeaderName = "X-Correlation-Id";
+
+    public async Task InvokeAsync(HttpContext context)
+    {
+        var correlationId = context.Request.Headers.TryGetValue(HeaderName, out var incoming)
+            && !string.IsNullOrWhiteSpace(incoming)
+                ? incoming.ToString()
+                : Guid.NewGuid().ToString("N");
+
+        context.Items[HeaderName] = correlationId;
+        context.Response.Headers[HeaderName] = correlationId;
+
+        await next(context);
+    }
+}
+```
+
+Registration:
+[Program.cs](server/QuietWealth.Backend/Program.cs:74)
+
+```csharp
+app.UseMiddleware<CorrelationIdMiddleware>();
+app.UseExceptionHandler();
+```
+
+`CorrelationIdMiddleware` must run before exception handling writes the response body.
+
+Do not treat the response header itself as the source of truth. In the implementation, prefer a scoped accessor or `HttpContext.Items`, and only mirror the value to the response header.
+
+### Controller usage rule
+
+Controllers stay thin and return success only. They should not manually create error responses.
+
+Example: [DocumentIntakeController.cs](server/QuietWealth.Backend/domains/document-intake/controllers/DocumentIntakeController.cs)
+```csharp
+[ApiController]
+[Route("api/files")]
+public sealed class DocumentIntakeController(
+    IDocumentIntakeService documentIntakeService) : ControllerBase
+{
+    [HttpPost("upload")]
+    [ProducesResponseType(typeof(ApiResponse<UploadFilesResponse>), StatusCodes.Status202Accepted)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
+    public async Task<ActionResult<ApiResponse<UploadFilesResponse>>> UploadAsync(
+        [FromBody] UploadFilesRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await documentIntakeService.UploadAsync(request, cancellationToken);
+        var correlationId =
+            HttpContext.Items[CorrelationIdMiddleware.HeaderName]?.ToString()
+            ?? HttpContext.TraceIdentifier;
+
+        return Accepted(new ApiResponse<UploadFilesResponse>(response, correlationId));
+    }
+}
+```
+
+### Repository and service rules
+
+#### Services
+- validate business rules
+- throw typed domain exceptions
+- never return `null` to represent an error case
+- do not leak repository or SDK exceptions directly to controllers
+
+Example:
+[IdentityAccessService.cs](/d:/Repos/QuietWealth/server/QuietWealth.Backend/domains/identity-access/services/IdentityAccessService.cs):
+
+```csharp
+public async Task<UserSession> GetCurrentSessionAsync(CancellationToken cancellationToken = default)
+{
+    var session = await userSessionRepository.GetCurrentSessionAsync(cancellationToken);
+
+    if (session is null)
+    {
+        throw new DomainNotFoundException(
+            "The current session was not found.",
+            "identity.session_not_found");
+    }
+
+    return session;
+}
+```
+
+#### Repositories and infrastructure adapters
+- catch vendor-specific exceptions where needed
+- translate them into `InfrastructureException`
+- preserve the original exception as `InnerException` for logs
+
+Example:
+[AzureSqlConnectionFactory.cs](server/QuietWealth.Backend/shared/Infrastructure/AzureSqlConnectionFactory.cs)
+```csharp
+try
+{
+    // Azure SQL or Blob SDK call
+}
+catch (SqlException ex)
+{
+    throw new InfrastructureException(
+        "The request could not be completed because Azure SQL is unavailable.",
+        "infrastructure.azure_sql_unavailable",
+        retryable: true);
+}
+```
+
+### OpenAPI rules
+
+Every endpoint must document:
+- success envelope type
+- `400` validation problem
+- relevant domain errors such as `404` or `409`
+- infrastructure or unexpected failures when they are meaningful for clients
+
+The OpenAPI contract must show `application/problem+json` for error responses.
+Auth-protected endpoints must also document `401` and `403`.
+Upload endpoints must also document `413` and `415`.
+Endpoints with concurrency control must also document `412`.
+
+### Do not do
+- do not return custom ad hoc error DTOs per controller
+- do not return `200 OK` for business failures
+- do not expose raw exception details to clients
+- do not omit `correlationId` from any response path
+
+
+## Testing
 
 ### Mandatory test project layout
 Developers must create and maintain the following backend [test projects](server/tests):
