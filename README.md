@@ -1444,7 +1444,7 @@ Artifact is passed between jobs via `actions/upload-artifact` / `actions/downloa
 - Azure Event Grid
 - Azure Queue Storage
 - Azure Functions
-- Azure Data Factory
+- Scheduled Azure Function
 - Azure Notification Hubs
 - Observability resources (Application Insights / Azure Monitor where applicable)
 
@@ -1515,11 +1515,10 @@ az deployment sub create `
 ```
 
 ### Environments and deployment model
-- Environments: `dev`, `stage`, `prod` (isolated by resource group and/or subscription).
+- GitHub Environments: `QA` and `Production` (isolated by resource group and deployment configuration).
 - Deployment pattern:
-- `dev`: automatic deployment on merge to `develop`.
-- `stage`: automatic deployment from `main` after CI success.
-- `prod`: manual approval + protected environment gate.
+- `QA`: automatic deployment from `staging` after CI success.
+- `Production`: automatic deployment from `main` after CI success, with protected environment approval.
 - Application deployment target: **Azure App Service** (no Kubernetes required for current scope).
 - Production release strategy: deployment slots (`staging` -> `production`) with slot swap and rollback.
 
@@ -1528,12 +1527,12 @@ az deployment sub create `
 - `ci-backend`: restore, build, test backend (.NET), run static analysis/format checks.
 - `security-scan`: dependency/license checks and secret scanning.
 - `infra-plan`: `bicep build` + `az deployment what-if` per environment.
-- `deploy-dev` / `deploy-stage` / `deploy-prod`: apply infra changes (as approved) and deploy application artifacts.
+- `deploy-qa` / `deploy-prod`: apply infra changes (as approved) and deploy application artifacts.
 
 ### Governance and quality gates
 - Required PR checks before merge: frontend CI, backend CI, security scan.
 - Protected branches: `main` and release branches.
-- Environment approvals required for `prod`.
+- Environment approvals required for `Production`.
 - Artifact/version traceability required per deployment (commit SHA, build ID, release timestamp).
 
 ## Availability
@@ -1675,8 +1674,9 @@ Errors: `401 Unauthorized` for invalid or expired tokens, `403 Forbidden` for mi
 5. Azure Event Grid routes the Blob-created event to Azure Queue Storage.
 6. An Azure Function Queue Trigger reads the queue message, processes the file, validates checksum/metadata, and updates `SourceDocument.validation_status` in Azure SQL: `Pending`, `Processing`, `Completed`, or `Failed`.
 7. The function updates `DocumentBatch.status` in Azure SQL based on the batch result: `Pending`, `Processing`, `Completed`, or `Failed`.
-8. OutboxMessage records are created for audit, notification, and observability side effects.
-9. React polls `GET /api/trust-record-applications/{id}/status` or receives a user-facing notification through Azure Notification Hubs. Azure Notification Hubs is not part of document processing.
+8. When validation or processing fails, the function sets `SourceDocument.validation_status = Failed` and writes `SourceDocument.processing_error_reason`.
+9. OutboxMessage records are created for audit, notification, and observability side effects.
+10. React polls `GET /api/trust-record-applications/{id}/status` or receives a user-facing notification through Azure Notification Hubs. Azure Notification Hubs is not part of document processing.
 
 Errors: `400 Bad Request` for invalid files, `413 Payload Too Large` for oversized uploads, `503 Service Unavailable` for storage failures.
 
@@ -1703,7 +1703,7 @@ Errors: `403 Forbidden` for non-experts, `409 Conflict` for finalized batches, `
 2. The backend validates session and marketplace read permission.
 3. `MarketplaceReadService` checks Azure Managed Redis using filter, search, page, and sort parameters as the cache key.
 4. On cache hit, the backend returns cached paginated card data.
-5. On cache miss, the backend queries Azure SQL, which remains the source of truth, and returns only SMEs with active certification.
+5. On cache miss, the backend queries Azure SQL, which remains the source of truth, and returns only SMEs with approved certification.
 6. Optional filters are applied: sector, trust level, growth, capital raised, and search text.
 7. The backend stores the result in Redis with a short TTL and invalidates it when certification status, marketplace listing data, or investment metric data changes.
 8. The backend returns paginated card data: company, sector, badge, growth, raised capital, investors, and trust level.
@@ -1729,10 +1729,10 @@ Errors: `404 Not Found` for missing or non-visible SMEs, `403 Forbidden` for res
 1. Domain services emit events for meaningful business transitions.
 2. Events include correlation id, actor id, timestamp, event type, aggregate id, and safe metadata.
 3. Audit entries are saved through [`IAuditEntryRepository`](/server/QuietWealth.Backend/domains/audit-observability/repositories/IAuditEntryRepository.cs) in the same transaction as the business state change.
-4. A matching `OutboxMessage` is inserted into `outbox_messages` with `status = pending`, `retry_count = 0`, aggregate reference, payload JSON, and correlation id.
-5. An outbox publisher worker reads pending messages, sends logs/traces to Azure Application Insights, and marks successful messages as `published`.
-6. If publishing fails, the worker increments `retry_count`, keeps the message pending, and retries with exponential backoff.
-7. Messages that exceed the retry limit are marked `failed`, logged as operational incidents, and kept for manual replay or investigation.
+4. A matching `OutboxMessage` is inserted into `outbox_messages` with `status = Pending`, `retry_count = 0`, aggregate reference, payload JSON, and correlation id.
+5. An outbox publisher worker reads `Pending` or retryable `Failed` messages, sends logs/traces to Azure Application Insights, and marks successful messages as `Published`.
+6. If publishing fails and retries remain, the worker updates `failure_reason` and `last_attempted_at_utc`, increments `retry_count`, and marks the message as `Failed`.
+7. Messages that exceed the retry limit are marked `DeadLettered`, have `dead_lettered_at_utc` updated, are logged as operational incidents, and are kept for manual replay or investigation.
 8. Azure Monitor tracks authentication, uploads, validation decisions, failures, outbox age, retry count, and failed-message count.
 
 Errors: audit persistence failures fail the current transaction; telemetry publishing failures do not block the user flow because they are retried through `outbox_messages`.
@@ -1831,6 +1831,10 @@ flowchart TD
         L7A["Layer entry"]
         ASQL["Azure SQL\nAdapter"]
         ABLS["Azure Blob\nStorage Adapter"]
+        AEVG["Event Grid\nRouting Boundary"]
+        AQUE["Azure Queue\nStorage Adapter"]
+        AFNW["Azure Function\nQueue Trigger Worker"]
+        ARED["Azure Redis\nCache Adapter"]
         ANHB["Notification Hub\nAdapter"]
         AENID["Auth0 / Entra ID\nAdapter"]
         AAIN["App Insights\nAdapter"]
@@ -1842,6 +1846,10 @@ flowchart TD
         L8A["Layer entry"]
         ESQL["Azure SQL\nDatabase"]
         EBLOB["Azure Blob\nStorage"]
+        EEVG["Azure Event\nGrid"]
+        EQUEUE["Azure Queue\nStorage"]
+        EFUNC["Azure\nFunctions"]
+        EREDIS["Azure Managed\nRedis"]
         ENHUB["Azure Notification\nHubs"]
         EAUTH["Auth0 +\nMicrosoft Entra ID"]
         EAINS["Azure Application\nInsights"]
@@ -1940,6 +1948,18 @@ flowchart TD
 - Liveness and readiness health endpoints expose API and worker availability to operational monitoring.
 - Failed asynchronous processing remains retryable, auditable, and traceable through correlation IDs.
 
+### 7) Connection management, pooling, and threading
+- ASP.NET Core request threads must not be blocked by long-running document processing.
+- Document processing runs through Azure Queue Storage and Azure Functions, not synchronous API threads.
+- Azure SQL access uses bounded connection pools with explicit command timeouts.
+- API read/write, audit/outbox, and Function processing workloads use explicit connection limits and monitoring boundaries.
+- Redis connections are reused through a shared cache client and are used only for marketplace reads.
+- Blob uploads use SAS direct upload, so the API does not hold request threads while transferring document bytes.
+- Retry policies use bounded retries with exponential backoff to avoid connection exhaustion.
+- `CancellationToken` is propagated through controllers, services, repositories, adapters, and workers.
+- Background workers process queue messages with controlled concurrency, retry limits, and queue visibility timeout handling.
+- Azure Application Insights and Azure Monitor track dependency latency, connection failures, queue depth, retries, and worker failures.
+
 ## Source Code
 
 ### Backend scaffold generation scope
@@ -1992,12 +2012,35 @@ flowchart TD
 
 #### 1. Repository Pattern
 
-| Aspect | Design |
-|---|---|
-| Purpose | Isolate domain services from Azure SQL persistence details while keeping Azure SQL Database as the source of truth. |
-| Azure pattern alignment | Internal application pattern; no direct Azure cloud pattern is forced. |
-| Where used | `domains/<domain>/repositories/` for aggregate retrieval and persistence. |
-| Main components | `IUserSessionRepository`, `IDocumentBatchRepository`, `IAuditEntryRepository`, `IRetentionRecordRepository`, `IMarketplaceListingRepository` |
+The following backend artifacts use the repository pattern:
+- [domains/identity-access/repositories/](/server/QuietWealth.Backend/domains/identity-access/repositories/)
+  - `IUserSessionRepository`
+- [domains/document-intake/repositories/](/server/QuietWealth.Backend/domains/document-intake/repositories/)
+  - `IDocumentBatchRepository`
+  - `ISourceDocumentRepository`
+- [domains/audit-observability/repositories/](/server/QuietWealth.Backend/domains/audit-observability/repositories/)
+  - `IAuditEntryRepository`
+- [domains/retention-archival/repositories/](/server/QuietWealth.Backend/domains/retention-archival/repositories/)
+  - `IRetentionRecordRepository`
+- [domains/marketplace/repositories/](/server/QuietWealth.Backend/domains/marketplace/repositories/)
+  - `IMarketplaceListingRepository`
+
+##### When to apply here
+Apply only if all are true:
+
+1. A domain service needs aggregate retrieval or persistence.
+2. Azure SQL Database remains the source of truth.
+3. Domain services must stay testable without Azure SQL adapter code.
+
+##### Do not apply here
+Skip repositories for:
+
+- Azure Blob Storage document binaries and archived artifacts.
+- Azure Managed Redis marketplace cache reads.
+- Azure Notification Hubs user-facing notification delivery.
+- DTO-only mapping with no persistence boundary.
+
+##### Implementation recipe
 
 ```csharp
 public interface IDocumentBatchRepository
@@ -2015,16 +2058,50 @@ public sealed class DocumentIntakeService
 }
 ```
 
-Repositories keep SQL queries outside domain services, so services remain testable with repository doubles and do not depend on Azure SQL adapter code.
+##### Migration steps for a new repository
+
+1. Add an interface under `domains/<domain>/repositories/`.
+2. Keep SQL implementation in the infrastructure adapter layer.
+3. Inject the interface into the domain service.
+4. Register the interface and implementation in dependency injection.
+5. Add repository tests for aggregate load/save behavior.
+
+##### Quick checks before finishing
+
+Run:
+
+```powershell
+rg -n "SqlConnection|DbContext|SELECT|INSERT|UPDATE" server/QuietWealth.Backend/domains -S
+```
+
+Expected: domain services depend on repository interfaces, not direct SQL or infrastructure queries.
 
 #### 2. Adapter Pattern
 
-| Aspect | Design |
-|---|---|
-| Purpose | Isolate external SDKs and cloud integrations from domain code. |
-| Azure pattern alignment | Anti-Corruption Layer when adapters translate external contracts into QuietWealth domain contracts. |
-| Where used | `shared/infrastructure/adapters/` and domain infrastructure implementations. |
-| Main components | Azure SQL adapter, Azure Blob Storage adapter, Azure Notification Hubs adapter, Auth0 / Entra ID adapter, Application Insights adapter, Redis cache adapter, Queue Storage adapter |
+The following backend artifacts use the adapter pattern:
+- [shared/infrastructure/adapters/](/server/QuietWealth.Backend/shared/infrastructure/adapters/)
+  - `AzureBlobStorageAdapter`
+  - `AzureNotificationHubAdapter`
+  - `AzureApplicationInsightsAdapter`
+  - `AzureQueueStorageAdapter`
+  - `AzureRedisCacheAdapter`
+  - `Auth0EntraIdentityAdapter`
+
+##### When to apply here
+Apply only if all are true:
+
+1. Backend code talks to an external provider or Azure SDK.
+2. Provider contracts must be translated into QuietWealth contracts.
+3. Domain services must remain independent from vendor SDK details.
+
+##### Do not apply here
+Skip adapters for:
+
+- Domain entities and value objects.
+- DTOs that only shape HTTP requests/responses.
+- Internal domain service calls within one bounded context.
+
+##### Implementation recipe
 
 ```csharp
 public interface IBlobStorageAdapter
@@ -2045,16 +2122,49 @@ public sealed class AzureBlobStorageAdapter : IBlobStorageAdapter
 }
 ```
 
-Adapters keep Azure SDK calls behind backend-owned interfaces, so domain services stay stable when provider configuration or SDK details change. Azure Blob Storage stores files and artifacts; Azure SQL stores transactional metadata.
+##### Migration steps for a new adapter
+
+1. Define the adapter interface with QuietWealth DTOs or domain models.
+2. Implement the provider-specific adapter outside domain logic.
+3. Register the adapter in dependency injection.
+4. Replace direct SDK usage with the adapter interface.
+5. Add contract tests for translation and failure behavior.
+
+##### Quick checks before finishing
+
+Run:
+
+```powershell
+rg -n "Azure\.|BlobServiceClient|NotificationHub|QueueClient|Redis|TelemetryClient" server/QuietWealth.Backend/domains -S
+```
+
+Expected: vendor SDK references stay outside domain services.
 
 #### 3. Facade Pattern
 
-| Aspect | Design |
-|---|---|
-| Purpose | Simplify complex integrations behind stable application-facing contracts. |
-| Azure pattern alignment | Federated Identity for Auth0 + Microsoft Entra ID; Valet Key for Blob SAS upload permissions; user-facing notification publishing through Notification Hubs. |
-| Where used | Auth0 + Microsoft Entra ID token validation, Blob upload permission / SAS URL generation, and user-facing Notification Hubs publishing. |
-| Main components | `IdentityAccessFacade`, `DocumentUploadFacade`, `NotificationFacade` |
+The following backend artifacts use the facade pattern:
+- [domains/identity-access/services/](/server/QuietWealth.Backend/domains/identity-access/services/)
+  - `IdentityAccessFacade`
+- [domains/document-intake/services/](/server/QuietWealth.Backend/domains/document-intake/services/)
+  - `DocumentUploadFacade`
+- [domains/audit-observability/services/](/server/QuietWealth.Backend/domains/audit-observability/services/)
+  - `NotificationFacade`
+
+##### When to apply here
+Apply only if all are true:
+
+1. A controller needs one stable entry point into a complex workflow.
+2. The workflow coordinates several services or adapters.
+3. Callers should not know Auth0, Entra ID, Blob SAS, or Notification Hubs internals.
+
+##### Do not apply here
+Skip facades for:
+
+- Single-method services with no orchestration.
+- Domain entities.
+- Gateway-level behavior handled by Azure API Management.
+
+##### Implementation recipe
 
 ```csharp
 public interface IDocumentUploadFacade
@@ -2087,16 +2197,50 @@ public sealed class DocumentUploadFacade : IDocumentUploadFacade
 }
 ```
 
-Facades reduce controller complexity and provide one stable entry point for federated token validation, Valet Key upload permissions, and Notification Hubs delivery. The backend validates Auth0 JWTs, never receives username/password credentials, and never stores client secrets inside JWT payloads.
+##### Migration steps for a new facade
+
+1. Create a facade interface for the workflow.
+2. Inject service contracts, not concrete implementations.
+3. Move orchestration out of controllers.
+4. Keep provider details behind adapters.
+5. Add facade tests with mocked service contracts.
+
+##### Quick checks before finishing
+
+Run:
+
+```powershell
+rg -n "new .*Service|Auth0|Blob|NotificationHub" server/QuietWealth.Backend/domains/*/controllers -S
+```
+
+Expected: controllers call facades or services and do not coordinate provider-specific workflows.
 
 #### 4. DTO Pattern
 
-| Aspect | Design |
-|---|---|
-| Purpose | Separate HTTP contracts from domain models. |
-| Azure pattern alignment | Internal API contract pattern aligned with OpenAPI / Swagger; no separate Azure cloud pattern is assigned. |
-| Where used | Controllers, OpenAPI / Swagger contracts, request models, and response models. |
-| Main components | `CreateDocumentBatchRequestDto`, `UploadPermissionDto`, `MarketplaceListingResponseDto`, `CertificationDecisionRequestDto` |
+The following backend artifacts use the DTO pattern:
+- [domains/document-intake/controllers/](/server/QuietWealth.Backend/domains/document-intake/controllers/)
+  - `CreateDocumentBatchRequestDto`
+  - `UploadPermissionDto`
+- [domains/certification-validation/controllers/](/server/QuietWealth.Backend/domains/certification-validation/controllers/)
+  - `CertificationDecisionRequestDto`
+- [domains/marketplace/controllers/](/server/QuietWealth.Backend/domains/marketplace/controllers/)
+  - `MarketplaceListingResponseDto`
+
+##### When to apply here
+Apply only if all are true:
+
+1. Data crosses an HTTP, queue, or external integration boundary.
+2. The contract must be explicit for OpenAPI / Swagger.
+3. Domain entities require protection from API shape changes.
+
+##### Do not apply here
+Skip DTOs for:
+
+- Rich domain behavior and invariants.
+- Internal value objects that never cross a boundary.
+- Persistence-only schema types.
+
+##### Implementation recipe
 
 ```csharp
 public sealed record CertificationDecisionRequestDto(
@@ -2112,16 +2256,48 @@ public sealed record MarketplaceListingResponseDto(
     decimal TrustLevel);
 ```
 
-Dtos protect domain entities from HTTP shape changes and make OpenAPI contracts explicit for frontend and integration tests.
+##### Migration steps for a new DTO
+
+1. Create a request or response DTO near the controller or contract folder.
+2. Map DTOs to domain commands, entities, or query objects.
+3. Keep validation rules explicit before calling domain services.
+4. Update OpenAPI / Swagger output.
+5. Add contract tests for required fields and response shape.
+
+##### Quick checks before finishing
+
+Run:
+
+```powershell
+rg -n "public .*Controller|record .*Dto|record .*DTO" server/QuietWealth.Backend -S
+```
+
+Expected: controllers expose DTOs and do not return domain entities directly.
 
 #### 5. Outbox Pattern
 
-| Aspect | Design |
-|---|---|
-| Purpose | Publish side effects reliably after state changes are committed to Azure SQL. |
-| Azure pattern alignment | Publisher-Subscriber for event fan-out and Retry for transient publication failures. |
-| Where used | Document upload completion, certification decisions, marketplace publication changes, retention archival events, audit and notification side effects. |
-| Main components | `OutboxMessage`, `IOutboxRepository`, `OutboxPublisherWorker` |
+The following backend artifacts use the outbox pattern:
+- [shared/Infrastructure/OutboxMessage.cs](/server/QuietWealth.Backend/shared/Infrastructure/OutboxMessage.cs)
+  - `OutboxMessage`
+- [shared/infrastructure/outbox/](/server/QuietWealth.Backend/shared/infrastructure/outbox/)
+  - `IOutboxRepository`
+  - `OutboxPublisherWorker`
+
+##### When to apply here
+Apply only if all are true:
+
+1. A state change must trigger audit, telemetry, notification, or publication side effects.
+2. The state change and pending side effect must be committed together in Azure SQL Database.
+3. Publishing needs retry and dead-letter behavior.
+
+##### Do not apply here
+Skip outbox for:
+
+- Pure read operations.
+- Synchronous validation with no side effect.
+- Azure Queue Storage document-processing commands before business state exists.
+
+##### Implementation recipe
 
 ```csharp
 public sealed record OutboxMessage(
@@ -2141,16 +2317,53 @@ await outbox.SaveAsync(new OutboxMessage(
     "Pending"), ct);
 ```
 
-Azure SQL stores `OutboxMessage` in the same transaction as the business change. `OutboxPublisherWorker` publishes side effects after commit and retries transient failures without losing audit or notification work.
+##### Migration steps for a new outbox event
+
+1. Define the event name and payload contract.
+2. Save the business state change.
+3. Save an `OutboxMessage` with `Status = "Pending"` in the same transaction.
+4. Add publisher handling and retry policy.
+5. Add dead-letter behavior for exhausted retries.
+
+##### Quick checks before finishing
+
+Run:
+
+```powershell
+rg -n "OutboxMessage|Status = \"Pending\"|retry" server/QuietWealth.Backend -S
+```
+
+Expected: reliable side effects use `OutboxMessage`, not direct best-effort publishing inside domain services.
 
 #### 6. Domain Events
 
-| Aspect | Design |
-|---|---|
-| Purpose | Decouple domain modules from downstream side effects and cross-domain reactions. |
-| Azure pattern alignment | Publisher-Subscriber for asynchronous event consumers; Queue-Based Load Leveling for document processing events. |
-| Where used | Domain services emit events; Outbox and ACL handlers consume them after commit. |
-| Main components | `DocumentBatchCreated`, `SourceDocumentProcessed`, `CertificationApproved`, `CertificationRejected`, `MarketplaceListingPublished`, `RetentionRecordArchived` |
+The following backend artifacts use domain events:
+- [domains/document-intake/models/](/server/QuietWealth.Backend/domains/document-intake/models/)
+  - `DocumentBatchCreated`
+  - `SourceDocumentProcessed`
+- [domains/certification-validation/models/](/server/QuietWealth.Backend/domains/certification-validation/models/)
+  - `CertificationApproved`
+  - `CertificationRejected`
+- [domains/marketplace/models/](/server/QuietWealth.Backend/domains/marketplace/models/)
+  - `MarketplaceListingPublished`
+- [domains/retention-archival/models/](/server/QuietWealth.Backend/domains/retention-archival/models/)
+  - `RetentionRecordArchived`
+
+##### When to apply here
+Apply only if all are true:
+
+1. A meaningful business fact has already happened.
+2. Other modules, ACL handlers, audit, or outbox publishers need to react.
+3. The producer must not call downstream services directly.
+
+##### Do not apply here
+Skip domain events for:
+
+- Commands that request work.
+- Query results.
+- Low-level logging messages without domain meaning.
+
+##### Implementation recipe
 
 ```csharp
 public interface IDomainEvent
@@ -2165,16 +2378,49 @@ public sealed record SourceDocumentProcessed(
     string Status) : IDomainEvent;
 ```
 
-Domain events keep modules independent: document intake, certification, marketplace, retention, and audit communicate through event contracts instead of direct service calls. Queue-Based Load Leveling is applied to document processing: Azure Event Grid detects and routes Blob-created events, Azure Queue Storage buffers processing work, and Azure Functions consume queued events. This smooths upload spikes and prevents the backend API from processing document bytes synchronously. Azure Notification Hubs delivers user-facing notifications only.
+##### Migration steps for a new domain event
+
+1. Name the event as a past-tense business fact.
+2. Include aggregate id, timestamp, correlation id, and safe metadata.
+3. Emit the event after the domain state transition.
+4. Route side effects through outbox or ACL handlers.
+5. Add tests for the event-producing transition.
+
+##### Quick checks before finishing
+
+Run:
+
+```powershell
+rg -n "IDomainEvent|Created|Processed|Approved|Rejected|Archived" server/QuietWealth.Backend/domains -S
+```
+
+Expected: events describe completed facts and do not perform side effects directly.
 
 #### 7. Strategy Pattern
 
-| Aspect | Design |
-|---|---|
-| Purpose | Encapsulate interchangeable business rules behind common interfaces. |
-| Azure pattern alignment | Internal application pattern for business rule variation; no separate Azure cloud pattern is assigned. |
-| Where used | Document validation by document category, retention policy calculation, certification scoring and trust-level assignment. |
-| Main components | `IDocumentValidationStrategy`, `IRetentionPolicyStrategy`, `ICertificationScoringStrategy` |
+The following backend artifacts use the strategy pattern:
+- [domains/document-intake/services/](/server/QuietWealth.Backend/domains/document-intake/services/)
+  - `IDocumentValidationStrategy`
+- [domains/certification-validation/services/](/server/QuietWealth.Backend/domains/certification-validation/services/)
+  - `ICertificationScoringStrategy`
+- [domains/retention-archival/services/](/server/QuietWealth.Backend/domains/retention-archival/services/)
+  - `IRetentionPolicyStrategy`
+
+##### When to apply here
+Apply only if all are true:
+
+1. Multiple rule variants share the same contract.
+2. The caller selects or receives a strategy without knowing implementation details.
+3. Each variant must be unit-tested independently.
+
+##### Do not apply here
+Skip strategies for:
+
+- One-off logic with no alternate rule set.
+- Workflow orchestration across services.
+- State transitions that belong in the State pattern.
+
+##### Implementation recipe
 
 ```csharp
 public interface ICertificationScoringStrategy
@@ -2189,16 +2435,51 @@ public sealed class RevenueBasedScoringStrategy : ICertificationScoringStrategy
 }
 ```
 
-Strategies keep rule variation isolated, so validation, retention, and scoring logic can be unit-tested without changing orchestration services.
+##### Migration steps for a new strategy
+
+1. Extract the shared rule contract.
+2. Move each rule variant into its own class.
+3. Inject or select the strategy in the orchestration service.
+4. Keep strategy methods deterministic.
+5. Add unit tests per variant.
+
+##### Quick checks before finishing
+
+Run:
+
+```powershell
+rg -n "Strategy|CalculateTrustLevel|Validate|RetentionPolicy" server/QuietWealth.Backend/domains -S
+```
+
+Expected: rule variation is isolated in strategy classes, not duplicated across services.
 
 #### 8. Middleware Pipeline Pattern
 
-| Aspect | Design |
-|---|---|
-| Purpose | Separate cross-cutting request responsibilities from controller and domain logic. |
-| Azure pattern alignment | Gateway Routing and Gateway Offloading through Azure API Management; Health Endpoint Monitoring for liveness/readiness checks. |
-| Where used | ASP.NET Core request pipeline before domain controllers execute. |
-| Main components | Authentication middleware, authorization policies, error handling middleware, correlation ID middleware, logging / telemetry middleware |
+The following backend artifacts use the middleware pipeline pattern:
+- [shared/middleware/](/server/QuietWealth.Backend/shared/middleware/)
+  - `CorrelationIdMiddleware`
+  - `ErrorHandlingMiddleware`
+  - `RequestTelemetryMiddleware`
+- [Program.cs](/server/QuietWealth.Backend/Program.cs)
+  - Authentication middleware
+  - Authorization policies
+  - Health checks
+
+##### When to apply here
+Apply only if all are true:
+
+1. The concern must run consistently for many HTTP requests.
+2. The concern is cross-cutting and not domain-specific.
+3. The concern belongs at application level, after Azure API Management gateway policies.
+
+##### Do not apply here
+Skip middleware for:
+
+- Business validation.
+- Domain state transitions.
+- Azure API Management gateway routing and throttling policies.
+
+##### Implementation recipe
 
 ```csharp
 var app = builder.Build();
@@ -2212,16 +2493,51 @@ app.MapControllers();
 app.MapHealthChecks("/health/ready");
 ```
 
-Azure API Management handles gateway-level responsibilities such as routing, rate limits, and shared request policies. ASP.NET Core middleware handles application-level cross-cutting concerns: authentication, authorization, error mapping, correlation IDs, telemetry, and health checks.
+##### Migration steps for new middleware
+
+1. Create one middleware class for one cross-cutting concern.
+2. Avoid domain logic inside middleware.
+3. Register middleware in the correct order.
+4. Add tests for request/response behavior.
+5. Confirm health endpoints still respond.
+
+##### Quick checks before finishing
+
+Run:
+
+```powershell
+rg -n "UseMiddleware|UseAuthentication|UseAuthorization|MapHealthChecks" server/QuietWealth.Backend -S
+```
+
+Expected: cross-cutting HTTP concerns are centralized in the pipeline.
 
 #### 9. Read Model Pattern
 
-| Aspect | Design |
-|---|---|
-| Purpose | Optimize read-heavy marketplace and investment detail queries without overloading write aggregates. |
-| Azure pattern alignment | Materialized View / CQRS-lite for read-optimized data and Cache-Aside for Azure Managed Redis. |
-| Where used | Marketplace browsing, investment detail charts, and Redis-backed marketplace cache. |
-| Main components | `MarketplaceListing`, `InvestmentMetric`, `MarketplaceReadService`, `InvestmentDetailService`, Azure Managed Redis cache |
+The following backend artifacts use the read model pattern:
+- [domains/marketplace/models/](/server/QuietWealth.Backend/domains/marketplace/models/)
+  - `MarketplaceListing`
+  - `InvestmentMetric`
+- [domains/marketplace/services/](/server/QuietWealth.Backend/domains/marketplace/services/)
+  - `MarketplaceReadService`
+  - `InvestmentDetailService`
+- [shared/infrastructure/adapters/](/server/QuietWealth.Backend/shared/infrastructure/adapters/)
+  - `IMarketplaceCacheAdapter`
+
+##### When to apply here
+Apply only if all are true:
+
+1. The query is read-heavy and user-facing.
+2. The response shape differs from write aggregates.
+3. Azure SQL Database remains the source of truth and Redis acts only as marketplace cache.
+
+##### Do not apply here
+Skip read models for:
+
+- Transactional writes.
+- Document binary processing.
+- Authorization decisions.
+
+##### Implementation recipe
 
 ```csharp
 public sealed class MarketplaceReadService
@@ -2234,16 +2550,49 @@ public sealed class MarketplaceReadService
 }
 ```
 
-`MarketplaceListing` and `InvestmentMetric` are read models stored in Azure SQL. Azure Managed Redis uses Cache-Aside for marketplace reads only; Azure SQL remains the source of truth.
+##### Migration steps for a new read model
+
+1. Define the read model shape.
+2. Store it in Azure SQL as the source of truth.
+3. Add repository query methods for filters and pagination.
+4. Add Redis cache-aside only for marketplace read pressure.
+5. Invalidate cache when certification or marketplace metrics change.
+
+##### Quick checks before finishing
+
+Run:
+
+```powershell
+rg -n "MarketplaceListing|InvestmentMetric|CacheAside|GetOrCreateAsync" server/QuietWealth.Backend -S
+```
+
+Expected: Redis usage remains limited to marketplace reads.
 
 #### 10. Anti-Corruption Layer
 
-| Aspect | Design |
-|---|---|
-| Purpose | Prevent direct coupling between bounded contexts and preserve each domain language. |
-| Azure pattern alignment | Anti-Corruption Layer from Microsoft Azure Architecture Center. |
-| Where used | `acls/document-intake-to-certification-validation`, `acls/certification-validation-to-marketplace`, `acls/all-domains-to-audit-observability` |
-| Main components | `DocumentIntakeToCertificationValidationAcl`, `CertificationValidationToMarketplaceAcl`, `AuditObservabilityAcl` |
+The following backend artifacts use the anti-corruption layer pattern:
+- [acls/document-intake-to-certification-validation/](/server/QuietWealth.Backend/acls/document-intake-to-certification-validation/)
+  - `DocumentIntakeToCertificationValidationAcl`
+- [acls/certification-validation-to-marketplace/](/server/QuietWealth.Backend/acls/certification-validation-to-marketplace/)
+  - `CertificationValidationToMarketplaceAcl`
+- [acls/all-domains-to-audit-observability/](/server/QuietWealth.Backend/acls/all-domains-to-audit-observability/)
+  - `AuditObservabilityAcl`
+
+##### When to apply here
+Apply only if all are true:
+
+1. One bounded context needs to communicate with another.
+2. Terms or contracts differ between contexts.
+3. Direct service-to-service calls would couple domain internals.
+
+##### Do not apply here
+Skip ACLs for:
+
+- Calls within the same bounded context.
+- Generic infrastructure adapters.
+- Simple DTO mapping inside one controller.
+
+##### Implementation recipe
 
 ```csharp
 public interface ICertificationValidationToMarketplaceAcl
@@ -2258,7 +2607,228 @@ public sealed class CertificationValidationToMarketplaceAcl : ICertificationVali
 }
 ```
 
-The ACL keeps domain services from calling other domains directly, improving maintainability by localizing translation and integration rules. External provider adapters also act as ACL boundaries when they translate Auth0, Blob Storage, Redis, Queue Storage, Notification Hubs, and Application Insights contracts into QuietWealth contracts.
+##### Migration steps for a new ACL
+
+1. Create an ACL folder under `acls/<source>-to-<target>/`.
+2. Define an interface using source and target domain language explicitly.
+3. Implement translation without exposing target repositories to the source domain.
+4. Register the ACL in dependency injection.
+5. Add tests for translation rules.
+
+##### Quick checks before finishing
+
+Run:
+
+```powershell
+rg -n "using .*domains\..*\.services|using .*domains\..*\.repositories" server/QuietWealth.Backend/domains -S
+```
+
+Expected: cross-domain references go through `acls/`, not direct service or repository imports.
+
+#### 11. State Pattern
+
+The following backend artifacts use the state pattern:
+- [domains/document-intake/models/](/server/QuietWealth.Backend/domains/document-intake/models/)
+  - `SourceDocument`
+  - `DocumentBatch`
+  - `IDocumentState`
+- [domains/retention-archival/models/](/server/QuietWealth.Backend/domains/retention-archival/models/)
+  - `RetentionRecord`
+  - `RetentionLifecycleState`
+
+##### When to apply here
+Apply only if all are true:
+
+1. The model has explicit lifecycle states.
+2. Valid transitions differ by current state.
+3. Invalid transitions must be rejected inside the domain.
+
+##### Do not apply here
+Skip state objects for:
+
+- Static lookup values with no transitions.
+- One-step boolean flags.
+- DTO status strings that only mirror domain state.
+
+##### Implementation recipe
+
+```csharp
+public interface IDocumentState
+{
+    string Name { get; }
+    void MoveToProcessing(SourceDocument document);
+}
+
+public sealed class PendingDocumentState : IDocumentState
+{
+    public string Name => "Pending";
+
+    public void MoveToProcessing(SourceDocument document) =>
+        document.SetValidationStatus("Processing");
+}
+
+public sealed class CompletedDocumentState : IDocumentState
+{
+    public string Name => "Completed";
+
+    public void MoveToProcessing(SourceDocument document) =>
+        throw new InvalidOperationException("Completed documents cannot move back to Processing.");
+}
+```
+
+##### Migration steps for a new stateful model
+
+1. List all allowed states and transitions.
+2. Create a state interface.
+3. Implement state-specific transition methods.
+4. Delegate transition calls from the entity to the current state.
+5. Add tests for valid and invalid transitions.
+
+##### Quick checks before finishing
+
+Run:
+
+```powershell
+rg -n "validation_status|status|lifecycle_status|switch|if .*Status" server/QuietWealth.Backend/domains -S
+```
+
+Expected: lifecycle branching is centralized in state classes and domain models.
+
+#### 12. Chain of Responsibility Pattern
+
+The following backend artifacts use the chain of responsibility pattern:
+- [domains/document-intake/services/](/server/QuietWealth.Backend/domains/document-intake/services/)
+  - `IDocumentValidationHandler`
+  - `FileTypeValidationHandler`
+  - `DocumentSizeValidationHandler`
+- [domains/certification-validation/services/](/server/QuietWealth.Backend/domains/certification-validation/services/)
+  - `CertificationEligibilityHandler`
+- [domains/retention-archival/services/](/server/QuietWealth.Backend/domains/retention-archival/services/)
+  - `RetentionEligibilityHandler`
+
+##### When to apply here
+Apply only if all are true:
+
+1. Several validations must run in a defined order.
+2. Each validation rule has one responsibility.
+3. Critical failures must stop the pipeline immediately.
+
+##### Do not apply here
+Skip handler chains for:
+
+- Single validation checks.
+- Domain lifecycle transitions.
+- External side-effect publishing.
+
+##### Implementation recipe
+
+```csharp
+public interface IDocumentValidationHandler
+{
+    IDocumentValidationHandler SetNext(IDocumentValidationHandler next);
+    Task<ValidationResult> HandleAsync(UploadMetadataDto metadata, CancellationToken ct);
+}
+
+public sealed class FileTypeValidationHandler : IDocumentValidationHandler
+{
+    private IDocumentValidationHandler? next;
+
+    public IDocumentValidationHandler SetNext(IDocumentValidationHandler nextHandler) =>
+        next = nextHandler;
+
+    public Task<ValidationResult> HandleAsync(UploadMetadataDto metadata, CancellationToken ct) =>
+        IsSupported(metadata.ContentType)
+            ? next?.HandleAsync(metadata, ct) ?? Task.FromResult(ValidationResult.Valid())
+            : Task.FromResult(ValidationResult.Fail("Unsupported file type"));
+}
+```
+
+The chain coordinates validation order; individual handlers still use strategies for rule-specific behavior.
+
+##### Migration steps for a new validation chain
+
+1. Extract each validation rule into one handler.
+2. Define the shared handler interface.
+3. Link handlers in the required order.
+4. Stop the chain on critical validation failure.
+5. Add tests for each handler and full-chain behavior.
+
+##### Quick checks before finishing
+
+Run:
+
+```powershell
+rg -n "ValidationHandler|SetNext|HandleAsync|Validate" server/QuietWealth.Backend/domains -S
+```
+
+Expected: validation pipelines are composed from focused handlers.
+
+#### 13. Command Pattern
+
+The following backend artifacts use the command pattern:
+- [domains/document-intake/services/](/server/QuietWealth.Backend/domains/document-intake/services/)
+  - `ProcessSourceDocumentCommand`
+  - `ProcessSourceDocumentCommandHandler`
+- [domains/certification-validation/services/](/server/QuietWealth.Backend/domains/certification-validation/services/)
+  - `PublishCertificationDecisionCommand`
+- [domains/retention-archival/services/](/server/QuietWealth.Backend/domains/retention-archival/services/)
+  - `ArchiveRetentionRecordCommand`
+- [shared/infrastructure/outbox/](/server/QuietWealth.Backend/shared/infrastructure/outbox/)
+  - `OutboxPublisherWorker`
+
+##### When to apply here
+Apply only if all are true:
+
+1. A backend operation must be executed by a handler.
+2. The operation needs audit, retry, queue, or outbox processing.
+3. The action must be represented independently from the code that triggers it.
+
+##### Do not apply here
+Skip commands for:
+
+- Events that describe completed facts.
+- Simple read queries.
+- DTOs that only carry HTTP request data.
+
+##### Implementation recipe
+
+```csharp
+public interface ICommand
+{
+    Guid CommandId { get; }
+    string CorrelationId { get; }
+}
+
+public sealed record ProcessSourceDocumentCommand(
+    Guid CommandId,
+    string CorrelationId,
+    Guid SourceDocumentId,
+    Guid DocumentBatchId) : ICommand;
+
+public sealed class ProcessSourceDocumentCommandHandler
+{
+    public Task HandleAsync(ProcessSourceDocumentCommand command, CancellationToken ct) =>
+        Task.CompletedTask;
+}
+```
+
+##### Migration steps for a new command
+
+1. Define the command as an immutable action request.
+2. Include command id and correlation id.
+3. Implement a handler with one execution responsibility.
+4. Route async commands through Azure Queue Storage, Azure Functions, or Outbox processing.
+5. Add tests for handler execution and retry-safe behavior.
+
+##### Quick checks before finishing
+
+Run:
+
+```powershell
+rg -n "Command|CommandHandler|ICommand|OutboxMessage|Queue" server/QuietWealth.Backend -S
+```
+
+Expected: commands request work, while domain events describe work that already happened.
 
 ## Domain-Driven Design (DDD) domain definition
 
@@ -2331,6 +2901,8 @@ The ACL keeps domain services from calling other domains directly, improving mai
 | `InvestmentMetric` | Financial and marketplace KPIs shown in detail views and charts. |
 | `RetentionRecord` | Lifecycle metadata controlling retention, archive, and legal-hold status. |
 
+In the current MVP data model, `TrustRecordApplication` is represented by `DocumentBatch` plus `CertificationReview`.
+
 ### Mapping to backend folders
 | Folder | DDD role |
 |---|---|
@@ -2349,8 +2921,6 @@ The ACL keeps domain services from calling other domains directly, improving mai
 - `marketplace`
 - `retention-archival`
 - `audit-observability`
-
-
 
 # Data Design
 
@@ -2413,9 +2983,10 @@ erDiagram
     uniqueidentifier document_batch_id FK
     nvarchar file_name
     nvarchar content_type
-    nvarchar upload_status
+    nvarchar validation_status
     nvarchar blob_path
     nvarchar checksum
+    nvarchar processing_error_reason
   }
 
   CERTIFICATION_REVIEW {
@@ -2471,7 +3042,7 @@ erDiagram
     uniqueidentifier artifact_id
     nvarchar storage_tier
     nvarchar lifecycle_status
-    boolean legal_hold
+    bit legal_hold
     nvarchar archive_path
     datetimeoffset retained_until_utc
     datetimeoffset archived_at_utc
@@ -2485,8 +3056,11 @@ erDiagram
     nvarchar payload_json
     nvarchar status
     int retry_count
+    nvarchar failure_reason
     datetimeoffset created_at_utc
+    datetimeoffset last_attempted_at_utc
     datetimeoffset published_at_utc
+    datetimeoffset dead_lettered_at_utc
   }
 
   SME_PROFILE ||--o{ DOCUMENT_BATCH : owns
@@ -2534,6 +3108,11 @@ Table document_batches {
   owner_user_id uniqueidentifier [not null]
   status nvarchar(40) [not null]
   created_at_utc datetimeoffset [not null]
+
+  indexes {
+    (sme_profile_id, status)
+    (owner_user_id, created_at_utc)
+  }
 }
 
 Table source_documents {
@@ -2541,9 +3120,14 @@ Table source_documents {
   document_batch_id uniqueidentifier [not null, ref: > document_batches.document_batch_id]
   file_name nvarchar(260) [not null]
   content_type nvarchar(120) [not null]
-  upload_status nvarchar(40) [not null]
+  validation_status nvarchar(40) [not null]
   blob_path nvarchar(500)
   checksum nvarchar(128)
+  processing_error_reason nvarchar(1000)
+
+  indexes {
+    (document_batch_id, validation_status)
+  }
 }
 
 Table certification_reviews {
@@ -2601,6 +3185,12 @@ Table audit_entries {
   aggregate_type nvarchar(120)
   aggregate_id uniqueidentifier
   occurred_at_utc datetimeoffset [not null]
+
+  indexes {
+    (aggregate_type, aggregate_id)
+    (actor_user_id, occurred_at_utc)
+    correlation_id
+  }
 }
 
 Table retention_records {
@@ -2616,8 +3206,7 @@ Table retention_records {
 
   indexes {
     (artifact_type, artifact_id)
-    lifecycle_status
-    legal_hold
+    (lifecycle_status, retained_until_utc, legal_hold)
   }
 }
 
@@ -2629,8 +3218,11 @@ Table outbox_messages {
   payload_json nvarchar(max) [not null]
   status nvarchar(40) [not null]
   retry_count int [not null, default: 0]
+  failure_reason nvarchar(1000)
   created_at_utc datetimeoffset [not null]
+  last_attempted_at_utc datetimeoffset
   published_at_utc datetimeoffset
+  dead_lettered_at_utc datetimeoffset
 
   indexes {
     (status, created_at_utc)
@@ -2643,13 +3235,15 @@ Table outbox_messages {
 `audit_entries.aggregate_type + aggregate_id`, `retention_records.artifact_type + artifact_id`, and `outbox_messages.aggregate_type + aggregate_id` are polymorphic references. They intentionally do not use physical foreign keys because they can point to records from multiple bounded contexts. Referential integrity is enforced in domain services and covered by repository tests.
 
 ## Data integrity rules
-- A `SourceDocument` cannot be marked as `Completed` without `blob_path` and `checksum`; failed files keep `upload_status = Failed` and an error reason.
+- A `SourceDocument` cannot be marked as `Completed` without `blob_path` and `checksum`; failed files keep `validation_status = Failed` and `processing_error_reason`.
+- `DocumentBatch.status` allowed values: `Pending`, `Processing`, `Completed`, `Failed`, `UnderReview`, `Approved`, `Rejected`, `NeedsChanges`, `Archived`.
+- `CertificationReview.decision` allowed values: `Approved`, `Rejected`, `NeedsChanges`.
 - A `DocumentBatch` can move to review only when at least one valid `SourceDocument` exists.
 - A `CertificationReview` can be created only for an existing `DocumentBatch`.
 - Only SMEs with approved certification can appear in `MarketplaceListing`.
 - `AuditEntry` records are append-only.
 - `RetentionRecord` operations must be idempotent and preserve original artifact linkage, storage tier, retention date, and `legal_hold` state.
-- `OutboxMessage` records move from `pending` to `published` only after successful asynchronous publication.
+- `OutboxMessage` records move from `Pending` to `Published`, `Failed`, or `DeadLettered`.
 
 ## Creation, migration, and seed strategy
 - Creation scripts live under `server/deploy/sql/create/`.
@@ -2657,6 +3251,10 @@ Table outbox_messages {
 - Migration scripts live under `server/deploy/sql/migrations/` and use timestamped names such as `20260607_add_certification_reviews.sql`.
 - Rollback scripts live under `server/deploy/sql/rollback/` and use the same timestamp prefix as the migration they revert.
 - MVP seed data includes sample SME profiles, certified marketplace listings, document batches, source documents, investment metrics, access policies, and audit events.
+- Migrations that rename status fields must include backfill scripts.
+- Status value migrations must normalize casing, such as `pending` to `Pending`.
+- Large table changes must include lock-risk notes and rollback steps.
+- Rollback scripts must preserve audit, retention, and outbox lineage.
 
 ## Database review agents and automated checks
 | Agent/check | Responsibility |
