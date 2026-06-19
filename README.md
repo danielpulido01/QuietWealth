@@ -1212,7 +1212,7 @@ src/
   - Reference: https://learn.microsoft.com/en-us/azure/azure-sql/database/security-overview?view=azuresql#transparent-data-encryption-encryption-at-rest-with-service-managed-keys
 - Request payload limits:
   - General API payload limit: 10 MB
-  - File upload endpoints exception: up to 100 MB per request to support realistic document sets with multiple PDF, Excel, Word, and scanned image files
+  - File upload endpoints exception: up to 10 MB per request to support realistic document sets with multiple PDF, Excel, Word, and scanned image files
   - Requests above these limits must be rejected with a clear validation error
 - Rate limiting at Azure API Management:
   - Maximum concurrent connections per authenticated client: 10
@@ -1601,7 +1601,7 @@ Marketplace cache TTL: 5 min. Invalidate keys when certification status or marke
 
 | Stage | Scaling rule | Failure behavior |
 |---|---|---|
-| React direct upload to Blob | SAS expires after 15 min; max file size 100 MB/request | Expired SAS requires a new upload permission request |
+| React direct upload to Blob | SAS expires after 15 min; max file size 10 MB/request | Expired SAS requires a new upload permission request |
 | Event Grid | One Blob-created event per uploaded file | Failed delivery retries for 24 h, then logs operational incident |
 | Azure Queue Storage | Queue absorbs upload bursts; alert at > 1,000 pending messages | Upload remains `Pending`; UI shows delayed processing |
 | Azure Function Queue Trigger | Batch size 16, max 10 instances, max 160 concurrent messages | Retry 5 times; poison message sets document status to `Failed` |
