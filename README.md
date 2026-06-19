@@ -2060,7 +2060,7 @@ public sealed class DocumentIntakeController(
 - do not leak repository or SDK exceptions directly to controllers
 
 Example:
-[IdentityAccessService.cs](/d:/Repos/QuietWealth/server/QuietWealth.Backend/domains/identity-access/services/IdentityAccessService.cs):
+[IdentityAccessService.cs](server/QuietWealth.Backend/domains/identity-access/services/IdentityAccessService.cs):
 
 ```csharp
 public async Task<UserSession> GetCurrentSessionAsync(CancellationToken cancellationToken = default)
