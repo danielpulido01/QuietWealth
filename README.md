@@ -42,6 +42,8 @@ The core problem lies in the absence of a transparent, unified platform where fi
 - Environments: Development, Stage and Production
 - Observability Framework: Azure Application Insights SDK
 
+> **MVP local runtime:** the application currently runs as a React SPA built with Vite and uses `HashRouter`. Authentication is simulated locally by role for the demo; the Auth0 / Microsoft Entra integration documented below remains the target production architecture and is not required to run the MVP.
+
 
 ## 1.2 UX UI analysis
 
@@ -3862,3 +3864,84 @@ Abre `http://localhost:3000`. La API usa `http://localhost:5147` por defecto. Da
 ## Troubleshooting
 - Si el frontend no puede conectar, confirma que el backend está en `http://localhost:5147`.
 - Las decisiones y archivos vuelven al seed al reiniciar el backend: es comportamiento esperado del MVP local.
+
+
+---
+
+# Local MVP Run Guide
+
+## Frontend (FE)
+
+From the repository root:
+
+```powershell
+cd app
+npm install
+npm run dev
+```
+
+The Vite frontend is available at `http://localhost:3000`.
+
+To validate the production bundle:
+
+```powershell
+npm run build
+```
+
+## Backend (BE)
+
+In a second terminal:
+
+```powershell
+cd server\QuietWealth.Backend
+dotnet restore
+dotnet run --no-launch-profile --urls=http://localhost:5147
+```
+
+The local API is available at `http://localhost:5147`. Health checks:
+
+- `GET /health/live`
+- `GET /health/ready`
+
+## Database / Data Layer
+
+The MVP does not require a database, Docker, or Azure services to run locally. The backend uses `LocalMvpStore`, an in-memory data layer with seed data for demo users, SMEs, financial metrics, documents, and validation requests.
+
+When the backend restarts, uploaded documents, expert decisions, and simulated investments return to their seed state. This is expected local MVP behavior.
+
+## Required Environment Variables
+
+No environment variables are required to run the MVP with its default configuration.
+
+| Variable | Required | Default value | Purpose |
+|---|---:|---|---|
+| `VITE_API_BASE_URL` | No | `http://localhost:5147` | Local API URL consumed by the frontend. |
+| `VITE_EXTERNAL_API_BASE_URL` | No | Empty | Reserved for external sources; unused by the local MVP. |
+| `ASPNETCORE_ENVIRONMENT` | No | `Development` when using the development profile | Backend environment configuration. |
+
+Optional PowerShell example to set the API URL:
+
+```powershell
+$env:VITE_API_BASE_URL = "http://localhost:5147"
+npm run dev
+```
+
+## Required Dependencies
+
+- Node.js 22 LTS or compatible.
+- npm 10 or compatible.
+- .NET SDK 9.
+- A modern web browser.
+
+Docker, SQL Server, Azure, Auth0, and Microsoft Entra are not required for the local demo.
+
+## Data Initialization Procedure
+
+1. Start the backend: seed data is created automatically when `LocalMvpStore` is initialized.
+2. Start the frontend.
+3. Open `http://localhost:3000`.
+4. Select a demo role from the login screen:
+   - `Investor` — browse the Marketplace, view details, and complete a simulated investment request.
+   - `SME` — upload documents and create validation requests.
+   - `Expert` — review requests and approve or reject certifications.
+5. To reset the demo data, stop and start the backend again.

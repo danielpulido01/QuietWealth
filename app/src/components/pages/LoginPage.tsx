@@ -34,15 +34,18 @@ export function LoginPage({ onLogin, isSubmitting, errorKey }: LoginPageProps) {
   return (
     <main className="login-page">
       <section className="login-page__brand">
-        <p className="eyebrow">{t("brand.productTag")}</p>
+        <div className="login-page__brand-mark" aria-hidden="true">↗</div>
         <h1>{t("brand.name")}</h1>
         <p className="login-page__lead">{t("login.hero")}</p>
 
         <div className="benefit-list">
           {benefits.map((benefit) => (
-            <article className="benefit-card" key={benefit}>
-              <strong>{t(`login.benefits.${benefit}.title`)}</strong>
-              <p>{t(`login.benefits.${benefit}.description`)}</p>
+            <article className={`benefit-card benefit-card--${benefit}`} key={benefit}>
+              <span className="benefit-card__icon" aria-hidden="true" />
+              <div>
+                <strong>{t(`login.benefits.${benefit}.title`)}</strong>
+                <p>{t(`login.benefits.${benefit}.description`)}</p>
+              </div>
             </article>
           ))}
         </div>
@@ -58,7 +61,7 @@ export function LoginPage({ onLogin, isSubmitting, errorKey }: LoginPageProps) {
           <RolePicker selectedRole={role} onSelect={setRole} />
         </label>
 
-        <Button block size="lg" onClick={handleLogin} disabled={isSubmitting}>
+        <Button block size="lg" className="login-page__microsoft-button" icon={<span className="microsoft-mark"><i /><i /><i /><i /></span>} onClick={handleLogin} disabled={isSubmitting}>
           {isSubmitting ? t("login.ctaLoading") : t("login.cta")}
         </Button>
 
@@ -81,3 +84,6 @@ export function LoginPage({ onLogin, isSubmitting, errorKey }: LoginPageProps) {
     </main>
   );
 }
+
+
+

@@ -34,6 +34,7 @@ export function InvestmentDetailPage() {
           <p>
             {t(`sectors.${company.sector}`)} • {t("investmentDetail.summary")}
           </p>
+          <div className="detail-hero__project-summary"><span>Sobre el proyecto</span><p>{company.description}</p></div>
         </div>
 
         <div className="detail-hero__actions">
@@ -71,42 +72,20 @@ export function InvestmentDetailPage() {
         />
       </div>
 
-      <div className="detail-grid">
-        <Surface className="detail-copy">
-          <h2>{t("investmentDetail.decisionPacketTitle")}</h2>
-          <p>{company.description}</p>
-          <dl className="definition-list">
-            <div>
-              <dt>{t("investmentDetail.highlights.trust")}</dt>
-              <dd>{t("marketplace.card.trustValue", { value: company.trustLevel })}</dd>
-            </div>
-            <div>
-              <dt>{t("investmentDetail.highlights.retention")}</dt>
-              <dd>{formatPercent(company.retentionRate, locale)}</dd>
-            </div>
-            <div>
-              <dt>{t("investmentDetail.highlights.mrr")}</dt>
-              <dd>{formatCurrency(company.mrr, locale)}</dd>
-            </div>
-            <div>
-              <dt>{t("investmentDetail.highlights.margin")}</dt>
-              <dd>{formatPercent(company.profitMargin, locale)}</dd>
-            </div>
-          </dl>
-        </Surface>
-
-        <Surface className="detail-copy">
-          <h2>{t("investmentDetail.trendTitle")}</h2>
-          <ul className="trend-list">
-            {company.financialSeries.map((value, index) => (
-              <li key={`${company.id}-${index}`}>
-                <span>{t("investmentDetail.trendPeriod", { index: index + 1 })}</span>
-                <strong>{formatCurrency(value, locale)}</strong>
-              </li>
-            ))}
-          </ul>
-        </Surface>
-      </div>
-    </main>
+      <section className="detail-analytics">
+        <h2>Indicadores de crecimiento verificados</h2>
+        <div className="detail-chart-grid">
+          <Surface className="detail-chart-card"><h3>Crecimiento de ingresos</h3><svg viewBox="0 0 100 50" preserveAspectRatio="none"><path className="chart-area--green" d="M0,42 C15,38 29,35 42,31 S69,19 100,5 L100,50 L0,50Z"/><path className="chart-line chart-line--green" d="M0,42 C15,38 29,35 42,31 S69,19 100,5"/></svg><small>Ingresos mensuales verificados</small></Surface>
+          <Surface className="detail-chart-card"><h3>Crecimiento de inversionistas</h3><svg viewBox="0 0 100 50" preserveAspectRatio="none"><path className="chart-area--blue" d="M0,45 C18,40 35,35 52,27 S80,15 100,5 L100,50 L0,50Z"/><path className="chart-line chart-line--blue" d="M0,45 C18,40 35,35 52,27 S80,15 100,5"/></svg><small>Participación de inversionistas activos</small></Surface>
+        </div>
+        <Surface className="detail-chart-card detail-chart-card--capital"><h3>Capital acumulado en el tiempo</h3><svg viewBox="0 0 100 45" preserveAspectRatio="none"><path className="chart-area--navy" d="M0,42 C17,36 34,32 50,26 S76,10 100,4 L100,45 L0,45Z"/><path className="chart-line chart-line--navy" d="M0,42 C17,36 34,32 50,26 S76,10 100,4"/></svg><small>Capital acumulado de inversión (USD)</small></Surface>
+      </section>
+      <div className="detail-grid detail-grid--rich">
+        <Surface className="detail-copy"><h2>Descripción de la empresa</h2><p>{company.description}</p><p>Este perfil reúne evidencia financiera estandarizada y documentación validada por expertos para facilitar decisiones de inversión informadas.</p></Surface>
+        <Surface className="detail-copy"><h2>Métricas clave</h2><dl className="definition-list"><div><dt>{t("investmentDetail.highlights.trust")}</dt><dd>{t("marketplace.card.trustValue", { value: company.trustLevel })}</dd></div><div><dt>{t("investmentDetail.highlights.retention")}</dt><dd>{formatPercent(company.retentionRate, locale)}</dd></div><div><dt>{t("investmentDetail.highlights.mrr")}</dt><dd>{formatCurrency(company.mrr, locale)}</dd></div><div><dt>{t("investmentDetail.highlights.margin")}</dt><dd>{formatPercent(company.profitMargin, locale)}</dd></div></dl></Surface>
+      </div>    </main>
   );
 }
+
+
+

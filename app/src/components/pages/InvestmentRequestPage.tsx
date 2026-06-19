@@ -89,6 +89,13 @@ export function InvestmentRequestPage() {
           />
         </label>
         <p className="helper-copy">{t("investmentForm.amount.helper")}</p>
+        <div className="investment-amount-presets" aria-label="Montos sugeridos">
+          {[5000, 10000, 25000, 50000, 100000].map((preset) => (
+            <Button key={preset} variant="ghost" size="sm" onClick={() => setAmount(String(preset))}>
+              ${preset.toLocaleString()}
+            </Button>
+          ))}
+        </div>
       </Surface>
 
       <Surface className="form-section">
@@ -165,3 +172,4 @@ export function InvestmentRequestPage() {
     </main>
   );
 }
+

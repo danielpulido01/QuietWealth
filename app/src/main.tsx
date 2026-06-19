@@ -4,6 +4,7 @@ import { AppProviders } from "./AppProviders";
 import { AppRouter } from "./routes/AppRouter";
 import "./components/styles/globals.css";
 import "./components/styles/experience.css";
+import "./components/styles/figma-mvp.css";
 
 createRoot(document.getElementById("root")!).render(
   <AppProviders>
@@ -12,3 +13,5 @@ createRoot(document.getElementById("root")!).render(
     </HashRouter>
   </AppProviders>,
 );
+
+

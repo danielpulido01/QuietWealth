@@ -99,8 +99,8 @@
   },
   "marketplace": {
     "eyebrow": "Investor workspace",
-    "title": "Certified companies ready for review",
-    "subtitle": "Filter the marketplace by sector, trust level, and certification status.",
+    "title": "Certified companies ready for investment",
+    "subtitle": "Explore investment opportunities by sector, trust level, and certification status.",
     "filters": {
       "title": "Marketplace filters",
       "searchLabel": "Search companies",
@@ -302,3 +302,4 @@
     }
   }
 }
+

@@ -26,6 +26,7 @@ export function AppShell({ role, onLogout, isLoggingOut, children }: AppShellPro
     <div className="app-shell">
       <aside className="app-sidebar">
         <div className="app-sidebar__brand">
+          <span className="app-sidebar__mark" aria-hidden="true">↗</span>
           <p className="eyebrow">{t("brand.productTag")}</p>
           <h1>{t("brand.name")}</h1>
           <p>{t("brand.sidebarSummary")}</p>
@@ -61,7 +62,7 @@ export function AppShell({ role, onLogout, isLoggingOut, children }: AppShellPro
             </Button>
           </div>
 
-          <Button variant="ghost" block onClick={onLogout} disabled={isLoggingOut}>
+          <Button className="app-sidebar__logout" variant="ghost" block onClick={onLogout} disabled={isLoggingOut}>
             {isLoggingOut ? t("common.status.signingOut") : t("nav.logout")}
           </Button>
         </div>
@@ -71,3 +72,4 @@ export function AppShell({ role, onLogout, isLoggingOut, children }: AppShellPro
     </div>
   );
 }
+

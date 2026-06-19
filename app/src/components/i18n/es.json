@@ -99,8 +99,8 @@
   },
   "marketplace": {
     "eyebrow": "Espacio del inversionista",
-    "title": "Empresas certificadas listas para revisión",
-    "subtitle": "Filtra el marketplace por sector, nivel de confianza y estado de certificación.",
+    "title": "Empresas certificadas listas para inversión",
+    "subtitle": "Explora oportunidades de inversión por sector, nivel de confianza y estado de certificación.",
     "filters": {
       "title": "Filtros del marketplace",
       "searchLabel": "Buscar empresas",
@@ -302,3 +302,4 @@
     }
   }
 }
+
