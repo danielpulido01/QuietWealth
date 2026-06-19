@@ -30,11 +30,11 @@ The core problem lies in the absence of an intelligent system capable of automat
 - Integration Testing: Playwright version 1.58.2
 - Cloud Service: Azure
 - Hosted Services with the Cloud Service: Azure App Service
-- Code Repositories Service: Azure DevOps
+- Code Repositories Service: Github
 - Code Automation Tasks Tool: Husky 9.1.7
-- CI/CD Pipeline Technology: Azure DevOps Pipelines
+- CI/CD Pipeline Technology: Github Actions
 - Environments: Development, Stage and Production
-- Environment Deployment Tools: Azure Devops Environments
+- Environment Deployment Tools: Github Environments
 - Observability Framework: Azure Application Insights SDK
 
 
@@ -1998,7 +1998,7 @@ src
 ## Infrastructure (DevOps)
 
 ### CI/CD orchestration tool
-- Standard tool: **Azure DevOps Pipelines** (single CI/CD control plane from this monorepo).
+- Standard tool: **Github Actions Pipelines** (single CI/CD control plane from this monorepo).
 - Rationale: repository-native workflows, PR checks, environments, approvals, and strong Azure integration.
 
 ### Infrastructure as Code (IaC)

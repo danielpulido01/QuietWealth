@@ -371,8 +371,13 @@ export function getApiSourceClient(source: ApiSourceName) {
   return client;
 }
 
-const RAW_BACKEND_API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim();
-const RAW_EXTERNAL_API_BASE_URL = (import.meta.env.VITE_EXTERNAL_API_BASE_URL as string | undefined)?.trim();
+type RuntimeImportMeta = ImportMeta & {
+  env?: Record<string, string | undefined>;
+};
+
+const runtimeEnv = (import.meta as RuntimeImportMeta).env;
+const RAW_BACKEND_API_BASE_URL = runtimeEnv?.VITE_API_BASE_URL?.trim();
+const RAW_EXTERNAL_API_BASE_URL = runtimeEnv?.VITE_EXTERNAL_API_BASE_URL?.trim();
 
 export const BACKEND_API_SOURCE = "backend";
 export const EXTERNAL_API_SOURCE = "external";

@@ -7,3 +7,4 @@
 /server/QuietWealth.Backend/obj
 /server/tests/QuietWealth.Backend.ApiTests/obj
 /app/node_modules
+/app/coverage
