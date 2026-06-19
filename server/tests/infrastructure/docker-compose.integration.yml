@@ -1,0 +1,42 @@
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: qw-test-sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "${QW_SQL_SA_PASSWORD:-QuietWealth_Test_123!}"
+      MSSQL_PID: "Developer"
+    ports:
+      - "14333:1433"
+    volumes:
+      - qw-sqlserver-data:/var/opt/mssql
+    networks:
+      - qw-test-net
+
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite
+    container_name: qw-test-azurite
+    command: "azurite --blobHost 0.0.0.0 --queueHost 0.0.0.0 --location /data"
+    ports:
+      - "10000:10000"
+      - "10001:10001"
+    volumes:
+      - qw-azurite-data:/data
+    networks:
+      - qw-test-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: qw-test-redis
+    ports:
+      - "6380:6379"
+    networks:
+      - qw-test-net
+
+networks:
+  qw-test-net:
+    driver: bridge
+
+volumes:
+  qw-sqlserver-data:
+  qw-azurite-data:

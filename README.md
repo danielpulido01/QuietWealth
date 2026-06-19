@@ -1376,9 +1376,112 @@ Minimum unit-test targets:
 - DTO and mapper translation logic
 - Shared API response and error-shape helpers
 
+#### Unit test examples
+
+Example 1: [DocumentIntakeService.cs](server/QuietWealth.Backend/domains/document-intake/services/DocumentIntakeService.cs) should return repository data unchanged through [FilesReadResponse.cs](server/QuietWealth.Backend/domains/document-intake/models/FilesReadResponse.cs).
+
+```csharp
+using FluentAssertions;
+using Moq;
+using QuietWealth.Bakend.Domains.DocumentIntake.Models;
+using QuietWealth.Bakend.Domains.DocumentIntake.Repositories;
+using QuietWealth.Bakend.Domains.DocumentIntake.Services;
+
+public sealed class DocumentIntakeServiceTests
+{
+    [Fact]
+    public async Task ReadAsync_returns_batches_from_repository()
+    {
+        var expectedBatch = new DocumentBatch(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            Array.Empty<SourceDocument>(),
+            "Pending",
+            DateTimeOffset.UtcNow);
+
+        var repository = new Mock<IDocumentBatchRepository>();
+        repository
+            .Setup(x => x.ListAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { expectedBatch });
+
+        var sut = new DocumentIntakeService(repository.Object);
+
+        var response = await sut.ReadAsync(CancellationToken.None);
+
+        response.DocumentBatches.Should().ContainSingle();
+        response.DocumentBatches.Single().Should().Be(expectedBatch);
+        repository.Verify(x => x.ListAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+}
+```
+
+Example 2: [IdentityAccessService.cs](server/QuietWealth.Backend/domains/identity-access/services/IdentityAccessService.cs) currently delegates [GetCurrentSessionAsync](server/QuietWealth.Backend/domains/identity-access/repositories/IUserSessionRepository.cs) directly to [IUserSessionRepository](server/QuietWealth.Backend/domains/identity-access/repositories/IUserSessionRepository.cs).
+
+```csharp
+using FluentAssertions;
+using Moq;
+using QuietWealth.Bakend.Domains.IdentityAccess.Models;
+using QuietWealth.Bakend.Domains.IdentityAccess.Repositories;
+using QuietWealth.Bakend.Domains.IdentityAccess.Services;
+
+public sealed class IdentityAccessServiceTests
+{
+    [Fact]
+    public async Task GetCurrentSessionAsync_returns_repository_session()
+    {
+        var expected = new UserSession(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            "jane.doe@quietwealth.test",
+            new[] { "Investor" },
+            new[] { "marketplace.read" },
+            "jwt-token-placeholder",
+            DateTimeOffset.UtcNow.AddMinutes(30));
+
+        var repository = new Mock<IUserSessionRepository>();
+        repository
+            .Setup(x => x.GetCurrentSessionAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expected);
+
+        var sut = new IdentityAccessService(repository.Object);
+
+        var result = await sut.GetCurrentSessionAsync(CancellationToken.None);
+
+        result.Should().Be(expected);
+        repository.Verify(x => x.GetCurrentSessionAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+}
+```
+
+Example 3: configuration seams in [AzureSqlConnectionFactory.cs](server/QuietWealth.Backend/shared/Infrastructure/AzureSqlConnectionFactory.cs) should be unit-tested without containers.
+
+```csharp
+using FluentAssertions;
+using Microsoft.Extensions.Options;
+using QuietWealth.Bakend.Shared.Configuration;
+using QuietWealth.Bakend.Shared.Infrastructure;
+
+public sealed class AzureSqlConnectionFactoryTests
+{
+    [Fact]
+    public void GetConfiguredConnectionString_returns_bound_option_value()
+    {
+        var options = Options.Create(new AzureSqlOptions
+        {
+            ConnectionString = "Server=localhost,14333;Database=QuietWealthTestDb;"
+        });
+
+        var sut = new AzureSqlConnectionFactory(options);
+
+        sut.GetConfiguredConnectionString().Should().Be("Server=localhost,14333;Database=QuietWealthTestDb;");
+    }
+}
+```
+
 ### 2. [Integration testing strategy](server/tests/QuietWealth.Backend.IntegrationTests)
 
-Integration tests must validate that infrastructure code works against realistic dependencies. This tests must prove SQL persistence, outbox persistence, configuration binding, and Azure-facing adapter behavior before deployment.
+Integration tests must validate that infrastructure code works against realistic dependencies. These tests must prove SQL persistence, outbox persistence, configuration binding, and Azure-facing adapter behavior before deployment.
 
 Required implementation:
 - Use Testcontainers for .NET to start disposable dependencies in CI and local runs.
@@ -1397,6 +1500,94 @@ What must not be done:
 - No mocks for the dependency under test.
 - No calls to live Azure subscriptions from CI.
 - No "all green" claim without containers starting successfully.
+
+#### Docker-backed local test infrastructure
+
+For local integration and API test debugging, the repository use these scripts and compose file, developers must add a docker equivalent for each dependency in order to test:
+- [docker-compose.integration.yml](server/tests/infrastructure/docker-compose.integration.yml)
+- [start-test-dependencies.ps1](server/tests/infrastructure/start-test-dependencies.ps1)
+- [stop-test-dependencies.ps1](server/tests/infrastructure/stop-test-dependencies.ps1)
+
+Start the local dependencies with:
+
+```powershell
+pwsh ./server/tests/infrastructure/start-test-dependencies.ps1
+```
+
+Stop them with:
+
+```powershell
+pwsh ./server/tests/infrastructure/stop-test-dependencies.ps1 -DeleteVolumes
+```
+
+The compose stack starts:
+- SQL Server on `localhost:14333`
+- Azurite Blob service on `localhost:10000`
+- Azurite Queue service on `localhost:10001`
+- Redis on `localhost:6380`
+
+CI should still prefer Testcontainers so each test run controls its own dependency lifecycle. The compose files are for repeatable local debugging and manual smoke verification.
+
+#### Integration test examples
+
+Example 1: [AzureSqlConnectionFactory.cs](server/QuietWealth.Backend/shared/Infrastructure/AzureSqlConnectionFactory.cs) can be verified through real DI configuration binding.
+
+```csharp
+using FluentAssertions;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using QuietWealth.Bakend.Shared.Configuration;
+using QuietWealth.Bakend.Shared.Infrastructure;
+using Xunit;
+
+public sealed class AzureSqlConnectionFactoryIntegrationTests
+{
+    [Fact]
+    public void Factory_reads_connection_string_from_bound_configuration()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [$"{AzureSqlOptions.SectionName}:ConnectionString"] =
+                    "Server=localhost,14333;Database=QuietWealthTestDb;User Id=sa;Password=QuietWealth_Test_123!;"
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.Configure<AzureSqlOptions>(configuration.GetSection(AzureSqlOptions.SectionName));
+        services.AddSingleton<IAzureSqlConnectionFactory, AzureSqlConnectionFactory>();
+
+        using var provider = services.BuildServiceProvider();
+
+        var factory = provider.GetRequiredService<IAzureSqlConnectionFactory>();
+
+        factory.GetConfiguredConnectionString()
+            .Should()
+            .Contain("Server=localhost,14333");
+    }
+}
+```
+
+Example 2: when [DocumentBatchRepository.cs](server/QuietWealth.Backend/domains/document-intake/repositories/DocumentBatchRepository.cs) is implemented, prove it round-trips data against containerized SQL Server.
+
+```csharp
+[Fact]
+public async Task ListAsync_returns_batches_persisted_in_sql_server()
+{
+    // Placeholder until DocumentBatchRepository has real SQL implementation.
+    // Arrange:
+    // 1. Start SQL Server test container.
+    // 2. Apply schema for document_batches and source_documents.
+    // 3. Insert one known batch record.
+    // 4. Resolve DocumentBatchRepository with the test connection string.
+    //
+    // Act:
+    // var result = await sut.ListAsync(CancellationToken.None);
+    //
+    // Assert:
+    // result.Should().ContainSingle(x => x.Status == "Pending");
+}
+```
 
 ### 3. [API testing strategy](server/tests/QuietWealth.Backend.ApiTests)
 
@@ -1427,6 +1618,99 @@ Implementation rules:
 - API tests own HTTP contract assertions for public endpoints; contract tests do not duplicate controller routing checks.
 - Every new controller action must ship with at least one success-path test and one failure-path test in [ApiTests](server/tests/QuietWealth.Backend.ApiTests).
 
+#### API test examples
+
+The host bootstrap below is a placeholder for the future application entry point. The endpoint targets are real and already defined in:
+- [MetadataController.cs](server/QuietWealth.Backend/controllers/MetadataController.cs)
+- [IdentityAccessController.cs](server/QuietWealth.Backend/domains/identity-access/controllers/IdentityAccessController.cs)
+- [DocumentIntakeController.cs](server/QuietWealth.Backend/domains/document-intake/controllers/DocumentIntakeController.cs)
+
+Example 1: verify `/api/metadata/openapi` returns the published contract location.
+
+```csharp
+using System.Net;
+using System.Text.Json;
+using FluentAssertions;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Xunit;
+
+public sealed class MetadataApiTests : IClassFixture<WebApplicationFactory<Program>>
+{
+    private readonly HttpClient _client;
+
+    public MetadataApiTests(WebApplicationFactory<Program> factory)
+    {
+        _client = factory.CreateClient();
+    }
+
+    [Fact]
+    public async Task GetOpenApiLocation_returns_contract_url()
+    {
+        var response = await _client.GetAsync("/api/metadata/openapi");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        payload.GetProperty("name").GetString().Should().Be("DUA Backend OpenAPI Contract");
+        payload.GetProperty("url").GetString().Should().Be("/openapi/dua-backend.openapi.json");
+    }
+}
+```
+
+Example 2: verify `/api/auth/session` returns the session shape when the backend is bootstrapped with a fake [IUserSessionRepository](server/QuietWealth.Backend/domains/identity-access/repositories/IUserSessionRepository.cs).
+
+```csharp
+using System.Text.Json;
+using FluentAssertions;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using QuietWealth.Bakend.Domains.IdentityAccess.Models;
+using QuietWealth.Bakend.Domains.IdentityAccess.Repositories;
+using Xunit;
+
+public sealed class AuthSessionApiTests : IClassFixture<WebApplicationFactory<Program>>
+{
+    private readonly HttpClient _client;
+
+    public AuthSessionApiTests(WebApplicationFactory<Program> factory)
+    {
+        _client = factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IUserSessionRepository>();
+                services.AddSingleton<IUserSessionRepository>(new FakeUserSessionRepository(
+                    new UserSession(
+                        Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+                        Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+                        "qa.user@quietwealth.test",
+                        new[] { "Expert" },
+                        new[] { "certification.review" },
+                        "jwt-placeholder",
+                        DateTimeOffset.UtcNow.AddMinutes(20))));
+            });
+        }).CreateClient();
+    }
+
+    [Fact]
+    public async Task GetSession_returns_current_user_session()
+    {
+        var response = await _client.GetAsync("/api/auth/session");
+
+        response.EnsureSuccessStatusCode();
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        payload.GetProperty("username").GetString().Should().Be("qa.user@quietwealth.test");
+    }
+
+    private sealed class FakeUserSessionRepository(UserSession session) : IUserSessionRepository
+    {
+        public Task<UserSession?> GetCurrentSessionAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<UserSession?>(session);
+    }
+}
+```
+
 ### 4. Health-check strategy
 
 The backend must expose exactly two public probes:
@@ -1447,6 +1731,98 @@ Implementation requirements:
 Test requirements:
 - API tests must assert both endpoints are registered.
 - Integration tests must force one dependency failure and prove `/health/ready` degrades while `/health/live` remains healthy.
+
+#### Health-check registration examples
+
+Use `AddHealthChecks()` during service registration in the future `server/QuietWealth.Backend/Program.cs` or, if the project centralizes DI extensions, in a composition file such as `server/QuietWealth.Backend/composition/HealthChecksServiceCollectionExtensions.cs`.
+
+Example registration:
+
+```csharp
+using QuietWealth.Bakend.Shared.Configuration;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using System.Text.Json;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.Configure<AzureSqlOptions>(
+    builder.Configuration.GetSection(AzureSqlOptions.SectionName));
+builder.Services.Configure<BlobStorageOptions>(
+    builder.Configuration.GetSection(BlobStorageOptions.SectionName));
+builder.Services.Configure<NotificationHubOptions>(
+    builder.Configuration.GetSection(NotificationHubOptions.SectionName));
+
+builder.Services
+    .AddHealthChecks()
+    .AddCheck("self", () => HealthCheckResult.Healthy(), tags: new[] { "live" })
+    .AddSqlServer(
+        connectionString: builder.Configuration["AzureSql:ConnectionString"]!,
+        name: "azure-sql",
+        tags: new[] { "ready" })
+    .AddRedis(
+        redisConnectionString: builder.Configuration["Redis:ConnectionString"]!,
+        name: "redis",
+        tags: new[] { "ready" })
+    .AddAzureBlobStorage(
+        connectionString: builder.Configuration["BlobStorage:ConnectionString"]!,
+        name: "blob-storage",
+        tags: new[] { "ready" })
+    // Placeholder custom check until the Notification Hub adapter exists.
+    .AddCheck<NotificationHubHealthCheck>("notification-hub", tags: new[] { "ready" });
+```
+
+Use `MapHealthChecks()` in the HTTP pipeline after routing/auth middleware and before the app starts accepting traffic:
+
+```csharp
+var app = builder.Build();
+
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("live"),
+    ResponseWriter = WriteHealthResponseAsync
+});
+
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready"),
+    ResponseWriter = WriteHealthResponseAsync
+});
+
+app.Run();
+
+static Task WriteHealthResponseAsync(HttpContext context, HealthReport report)
+{
+    context.Response.ContentType = "application/json";
+
+    var payload = new
+    {
+        status = report.Status.ToString(),
+        totalDuration = report.TotalDuration,
+        checks = report.Entries.Select(entry => new
+        {
+            name = entry.Key,
+            status = entry.Value.Status.ToString(),
+            duration = entry.Value.Duration,
+            description = entry.Value.Description
+        })
+    };
+
+    return context.Response.WriteAsync(JsonSerializer.Serialize(payload));
+}
+```
+
+Example API test for health registration:
+
+```csharp
+[Fact]
+public async Task Liveness_endpoint_returns_ok_when_process_is_running()
+{
+    var response = await _client.GetAsync("/health/live");
+
+    response.StatusCode.Should().Be(HttpStatusCode.OK);
+}
+```
 
 ### 5. [Contract testing strategy](server/tests/QuietWealth.Backend.ContractTests)
 
