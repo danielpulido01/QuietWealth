@@ -662,7 +662,6 @@ export function AppRoutes() {
 - Zod (runtime validation)
 - Axios via `HttpClientFacade`
 - Secure `HttpOnly` session cookies managed by the backend
-- React Router
 - Context API and in-memory session state (`SessionProvider` + `sessionStore`)
 
 ### 1.4.2 Authentication
