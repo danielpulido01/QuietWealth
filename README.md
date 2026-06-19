@@ -1343,6 +1343,376 @@ classDiagram
 - Correlation IDs: propagate a single correlation ID across all services, async messages, logs, traces, and domain events.
 - SLIs defined from design: availability and latency SLIs must be defined at architecture stage for each critical user flow.
 
+## Infrastructure (DevOps)
+<<Falta validar scripts finales de provisioning para CI/CD>>
+<<Podemos agregar reglas definitivas de branching y protección de ramas>>
+
+### CI/CD orchestration tool
+- Standard tool: **GitHub Actions** (single CI/CD control plane from this monorepo).
+- Rationale: repository-native workflows, PR checks, environments, approvals, and OIDC-based Azure deployment.
+
+### GitHub Environments
+Two environments must exist in the repo settings:
+
+| Environment | Branch | App suffix |
+|---|---|---|
+| `QA` | `staging` | `qa*` |
+| `Production` | `main` | `prod*` |
+
+#### Secrets (stored per GitHub environment)
+
+**QA environment:**
+```
+AZUREAPPSERVICE_CLIENTID_QA_FRONTEND
+AZUREAPPSERVICE_CLIENTID_QA_API
+AZUREAPPSERVICE_TENANTID_QA
+AZUREAPPSERVICE_SUBSCRIPTIONID_QA
+NEXT_PUBLIC_API_BASE_URL             ← build-time only, frontend
+```
+
+**Production environment:**
+```
+AZUREAPPSERVICE_CLIENTID_PROD_FRONTEND
+AZUREAPPSERVICE_CLIENTID_PROD_API
+AZUREAPPSERVICE_TENANTID_PROD
+AZUREAPPSERVICE_SUBSCRIPTIONID_PROD
+NEXT_PUBLIC_API_BASE_URL_PROD        ← build-time only, frontend
+```
+
+`NEXT_PUBLIC_API_BASE_URL*` is injected as `env:` on the `npm run build` step — baked into the Next.js bundle at build time. It is **not** an Azure app setting.
+
+**Azure login step:**
+```yaml
+- uses: azure/login@v2
+  with:
+    client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_QA_FRONTEND }}
+    tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_QA }}
+    subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_QA }}
+```
+
+### OIDC / Entra ID Setup (`infra/setup-github-oidc.ps1`)
+Run once per environment. Idempotent. Require `az login` + `gh auth login`.
+For each of the 4 app/role combos (`prod-frontend`, `prod-api`, `qa-frontend`, `qa-api`):
+
+1. Create Entra ID app registration named `dp-{env}-{role}-deploy`
+2. Create a service principal for it
+3. Add a federated credential:
+   - issuer: `https://token.actions.githubusercontent.com`
+   - subject: `repo:{owner/repo}:environment:{Production|QA}`
+   - audience: `api://AzureADTokenExchange`
+4. Assign `Contributor` role scoped to the specific Web App resource (not subscription-wide)
+5. Call `gh secret set` to write the 3 OIDC secrets into the correct GitHub environment
+
+Each Web App has its own Entra app registration and `clientId`. `tenantId` and `subscriptionId` are shared within an environment.
+
+### CI Workflows
+There should be one reusable backend validation workflow and two API deployment workflows. The deployment workflows must not publish unless all backend test lanes pass.
+
+**Triggers:**
+- Push to `main` → `paths: server/**` or `app/**` → deploys to Production
+- Push to `staging` → same path filters → deploys to QA
+- All support `workflow_dispatch`
+
+**Job pattern:**
+```
+build (environment: QA|Production, permissions: contents:read)
+  └─ deploy (needs: build, permissions: id-token:write + contents:read)
+```
+
+To enable OIDC token exchange with azure, `id-token: write` is required on the `deploy` job only.
+
+#### Required backend validation flow
+
+In addition to the deployment triggers listed above, backend CI must include a reusable validation job that runs on `pull_request` and can also be called from the staging and production API workflows before packaging.
+
+Required execution order:
+
+```yaml
+- name: Restore backend
+  run: dotnet restore server/QuietWealth.Backend.sln
+
+- name: Build backend
+  run: dotnet build server/QuietWealth.Backend.sln --configuration Release --no-restore
+
+- name: Unit tests
+  run: dotnet test server/tests/QuietWealth.Backend.UnitTests/QuietWealth.Backend.UnitTests.csproj --configuration Release --no-build --logger "trx;LogFileName=unit-tests.trx" --collect:"XPlat Code Coverage"
+
+- name: Integration tests
+  run: dotnet test server/tests/QuietWealth.Backend.IntegrationTests/QuietWealth.Backend.IntegrationTests.csproj --configuration Release --no-build --logger "trx;LogFileName=integration-tests.trx" --collect:"XPlat Code Coverage"
+
+- name: API tests
+  run: dotnet test server/tests/QuietWealth.Backend.ApiTests/QuietWealth.Backend.ApiTests.csproj --configuration Release --no-build --logger "trx;LogFileName=api-tests.trx" --collect:"XPlat Code Coverage"
+
+- name: Contract tests
+  run: dotnet test server/tests/QuietWealth.Backend.ContractTests/QuietWealth.Backend.ContractTests.csproj --configuration Release --no-build --logger "trx;LogFileName=contract-tests.trx" --collect:"XPlat Code Coverage"
+```
+
+Required workflow behaviors:
+- Upload all `*.trx` files and coverage artifacts even when one test lane fails.
+- Fail the workflow immediately if unit or contract tests fail.
+- Allow API and integration tests to finish in the same run so developers receive full defect information.
+- Publish only after all four test lanes are green.
+- Run a post-deploy readiness probe against `/health/ready`.
+
+#### Trigger Conditions & Job Dependencies
+
+| Workflow file | Branch | Path filter | Artifact name |
+|---|---|---|---|
+| `main_prodquietwealth-frontend.yml` | `main` | `app/**` | `node-app` |
+| `main_prodquietwealth-api.yml` | `main` | `server/**` | `.net-app` |
+| `staging_qaquietwealth-frontend.yml` | `staging` | `app/**` | `node-app` |
+| `staging_qaquietwealth-api.yml` | `staging` | `server/**` | `.net-app` |
+
+Artifact is passed between jobs via `actions/upload-artifact` / `actions/download-artifact`.
+
+#### Manual execution
+
+Developers must be able to run every backend lane locally before pushing:
+
+```powershell
+dotnet restore server/QuietWealth.Backend.sln
+dotnet build server/QuietWealth.Backend.sln --configuration Release --no-restore
+dotnet test server/tests/QuietWealth.Backend.UnitTests/QuietWealth.Backend.UnitTests.csproj --configuration Release --no-build
+dotnet test server/tests/QuietWealth.Backend.IntegrationTests/QuietWealth.Backend.IntegrationTests.csproj --configuration Release --no-build
+dotnet test server/tests/QuietWealth.Backend.ApiTests/QuietWealth.Backend.ApiTests.csproj --configuration Release --no-build
+dotnet test server/tests/QuietWealth.Backend.ContractTests/QuietWealth.Backend.ContractTests.csproj --configuration Release --no-build
+```
+
+To execute through GitHub Actions manually, `workflow_dispatch` must expose at least these inputs:
+- `environment`: `qa` or `prod`
+- `test_scope`: `all`, `unit`, `integration`, `api`, or `contract`
+- `deploy_after_tests`: `true` or `false`
+
+If `deploy_after_tests=false`, the workflow runs validation only and publishes test artifacts without deploying.
+
+#### Key Constraints
+
+- Each Web App has its **own** Entra app registration and `clientId` — do not share across frontend/API
+- `id-token: write` must be on the **deploy job**, not the build job
+- `NEXT_PUBLIC_*` vars are build-time settings, not runtime app settings — must be in the build job's `env:` block
+- `ConnectionStrings__QuietWealthSql`, `BlobStorage__ConnectionString`, and `NotificationHub__ConnectionString` use ASP.NET Core's double-underscore config convention
+- Bicep `@secure()` params never appear in deployment logs
+
+### Infrastructure as Code (IaC)
+- Standard tool: **Bicep** for provisioning and updates across environments.
+- Managed resources via Bicep:
+- Azure API Management
+- Azure App Service (API hosting)
+- Azure SQL Database
+- Azure Blob Storage
+- Azure Blob Lifecycle Management rules
+- Azure Managed Redis
+- Azure Event Grid
+- Azure Queue Storage
+- Azure Functions
+- Scheduled Azure Function
+- Azure Notification Hubs
+- Observability resources (Application Insights / Azure Monitor where applicable)
+
+#### Bicep Infra (`infra/`)
+
+**Scope:** `subscription` level — creates the resource group itself.
+
+**Locations:**
+- RG metadata: `eastus`
+- Resources deployed to: `westcentralus`
+
+**Per-environment resources:**
+- Linux App Service Plan `asp-dp-{env}` — SKU B1 (shared)
+- Frontend Web App (`Node|24-lts`) — startup: `npx --yes serve -s . -l $PORT`
+- API Web App (`DOTNETCORE|10.0`) — startup: `dotnet QuietWealth.Api.dll`
+
+**API app settings provisioned by Bicep:**
+```
+ASPNETCORE_ENVIRONMENT    = "Production" (prod) | "Development" (qa — enables Swagger)
+ConnectionStrings__QuietWealthSql = <from AZURE_SQL_CONNECTION_STRING env var>
+BlobStorage__ConnectionString     = <from AZURE_BLOB_CONNECTION_STRING env var>
+NotificationHub__ConnectionString = <from AZURE_NOTIFICATION_HUB_CONNECTION_STRING env var>
+AllowedOrigins__0         = https://{frontendAppName}.azurewebsites.net
+WEBSITE_RUN_FROM_PACKAGE  = 1
+```
+
+**Frontend app settings provisioned by Bicep:**
+```
+WEBSITE_NODE_DEFAULT_VERSION   = ~20
+SCM_DO_BUILD_DURING_DEPLOYMENT = false   ← disables Oryx; we ship pre-built /dist
+```
+
+**Parameters per environment:**
+
+| Param | qa | prod |
+|---|---|---|
+| `resourceGroupName` | `QuietWealth` | `QuietWealth` |
+| `resourceGroupLocation` | `eastus` | `eastus` |
+| `servicesLocation` | `westcentralus` | `westcentralus` |
+| `appServicePlanSku` | `B1` | `B1` |
+| `frontendAppName` | `qaquietwealth-frontend` | `prodquietwealth-frontend` |
+| `apiAppName` | `qaquietwealth-api` | `prodquietwealth-api` |
+
+**Secrets flow into Bicep via `.bicepparam`:**
+```bicep
+param sqlConnectionString             = readEnvironmentVariable('AZURE_SQL_CONNECTION_STRING', '')
+param blobStorageConnectionString     = readEnvironmentVariable('AZURE_BLOB_CONNECTION_STRING', '')
+param notificationHubConnectionString = readEnvironmentVariable('AZURE_NOTIFICATION_HUB_CONNECTION_STRING', '')
+```
+
+Set before running `deploy.ps1`:
+```powershell
+$env:AZURE_SQL_CONNECTION_STRING = '...'
+$env:AZURE_BLOB_CONNECTION_STRING = '...'
+$env:AZURE_NOTIFICATION_HUB_CONNECTION_STRING = '...'
+.\deploy.ps1 -Environment qa   # or prod
+```
+
+Local values live in `deploy.secrets.ps1` (gitignored via `*.secrets.ps1`). These secrets are never in GitHub Actions secrets — infra deployment is manual only.
+
+**Deploy command (run by `deploy.ps1`):**
+```powershell
+az deployment sub create `
+  --name        dp-{env}-{timestamp} `
+  --location    westcentralus `
+  --template-file main.bicep `
+  --parameters  parameters/{env}.bicepparam
+```
+
+### Environments and deployment model
+- GitHub Environments: `QA` and `Production` (isolated by resource group and deployment configuration).
+- Deployment pattern:
+- `QA`: automatic deployment from `staging` after CI success.
+- `Production`: automatic deployment from `main` after CI success, with protected environment approval.
+- Application deployment target: **Azure App Service** (no Kubernetes required for current scope).
+- Production release strategy: deployment slots (`staging` -> `production`) with slot swap and rollback.
+
+### Pipeline structure
+- `ci-frontend`: install, lint, test, build frontend.
+- `ci-backend`: restore, build, run unit tests, integration tests, API tests, contract tests, collect coverage, and run static analysis/format checks.
+- `security-scan`: dependency/license checks and secret scanning.
+- `infra-plan`: `bicep build` + `az deployment what-if` per environment.
+- `deploy-qa` / `deploy-prod`: apply infra changes (as approved), deploy application artifacts, and validate `/health/ready` before marking the release successful.
+
+### Governance and quality gates
+- Required PR checks before merge: frontend CI, backend CI, security scan.
+- Protected branches: `main` and release branches.
+- Environment approvals required for `Production`.
+- Artifact/version traceability required per deployment (commit SHA, build ID, release timestamp).
+
+## Availability
+Target availability: **99.9%** for the MVP and course demo scope. Higher availability targets require multi-region APIM, zone-redundant App Service, and zone-redundant SQL.
+
+### Resilience patterns (required)
+- Circuit breaker per downstream dependency (SQL, Blob, Notification Hubs, external APIs) to fail fast when an integration is unhealthy and protect API latency.
+- Timeouts + retries with exponential backoff (and jitter) for transient failures; retries only for idempotent operations or operations protected with idempotency keys.
+- Bulkhead isolation so one slow dependency cannot collapse the full API: separate connection pools, bounded concurrency, and isolated worker/queue paths by integration.
+
+### Controlled degradation (required)
+- Feature flags to disable non-critical capabilities quickly (notifications, advanced enrichments, non-essential validations) while preserving core transaction flows.
+- Partial responses when optional downstream data is unavailable; return available data + explicit `partial=true` and error details per missing section.
+- Absorption queues (outbox + async processing) for burst traffic and slow dependencies to decouple request handling from eventual side effects.
+
+With the most recent official SLA (April 8, 2026) for your stack:
+
+|Component	| SLA | Maximum theoretical downtime/year|
+|-----------|-----|--------------------------|
+|Azure API Management |	99.99% (Premium multi-region)	| 0.876 h|
+|Azure App Service	| 99.99% (with 2+ AZ) | 0.876 h|
+|Azure SQL Database	| 99.99% (no zone-redundant) / 99.995% (zone-redundant)	| 0.876 h / 0.438 h|
+|Azure Blob Storage	| 99.9% write hot; 99.99% read RA-GRS/RA-GZRS (depends on tier/redundancy) | 8.76 h / 0.876 h|
+|Azure Notification Hubs | 99.9% | 8.76 h|
+
+### Single points of failure (SPOF)
+- APIM in a single region or tier without multi-region.
+- App Service without Availability Zones.
+- SQL without zone redundancy + regional failover.
+- Blob in the synchronous write path (99.9% typical for write hot).
+- Notification Hubs if treated as a critical path of the transaction.
+
+### Recovery/mitigation for what doesn't provide 99.99% "by default"
+- APIM: use Premium with multi-region deployment and failover.
+- App Service: deploy across 2+ Availability Zones (ideally with a regional DR strategy).
+- SQL: zone-redundant + auto-failover group regional.
+- Blob: RA-GZRS/RA-GRS, retries with backoff, and decouple writing with asynchronous processing.
+- Notification Hubs: avoid blocking the main flow; use outbox + retries + DLQ + alternate channel (email/SMS) for incidents.
+
+## Scalability
+
+### Scaling model by component
+
+| Component | Scaling type | MVP baseline | Max target | Failure behavior |
+|---|---|---:|---:|---|
+| API App Service | Horizontal first, vertical if CPU stays high at max instances | 2 instances | 6 instances | APIM returns `429` after rate limit; API returns `503` if dependency pools are exhausted |
+| App Service Plan | Vertical scale for CPU/memory headroom | B1 | P1v3 | Deployment blocked if target SKU is unavailable |
+| Azure SQL Database | Vertical scale + query/index tuning | GP 2 vCores | GP 8 vCores | API returns `503`; writes are not silently dropped |
+| Azure Functions | Horizontal scale from Queue trigger | 1 instance | 10 instances | Message retries; after 5 failures goes to poison queue and document status becomes `Failed` |
+| Azure Managed Redis | Vertical tier scale | Standard C1 | Standard C3 | Fallback to direct Azure SQL reads for marketplace queries |
+
+### Auto-scaling rules
+
+| Target | Scale out trigger | Scale in trigger | Min | Max | Cooldown |
+|---|---|---|---:|---:|---|
+| API App Service | CPU > 70% for 10 min OR memory > 75% for 10 min OR API P95 latency > 800 ms for 10 min | CPU < 40% AND memory < 55% AND P95 latency < 400 ms for 30 min | 2 | 6 | 10 min |
+| Document Azure Functions | Queue depth > 100 messages OR oldest message age > 60 s | Queue depth < 20 messages AND oldest message age < 15 s for 15 min | 1 | 10 | 5 min |
+
+If the API reaches 6 instances and P95 stays above 1.5 s for 15 min, scale the App Service Plan from B1 to P1v3. <<Validate P1v3 budget with professor>>
+
+### Stateless API
+
+- API instances store no local session state.
+- Auth state lives in Auth0 JWTs and backend session metadata lives in Azure SQL.
+- Marketplace cache lives in Azure Managed Redis.
+- No sticky sessions are required; any API instance can serve any authenticated request.
+- If an API instance dies, the next request is routed to another instance and revalidates the JWT.
+
+### Azure SQL connection pooling
+
+| Pool | Max pool size | Timeout | Use |
+|---|---:|---:|---|
+| API read/write pool | 80 connections per API instance | 30 s command timeout | Marketplace, certification, document metadata |
+| Audit/outbox pool | 20 connections per API instance | 15 s command timeout | AuditEntry and OutboxMessage writes |
+| Function processing pool | 40 connections per Function instance | 30 s command timeout | Document processing status updates |
+
+- If a pool is exhausted for more than 5 s, return `503 Service Unavailable`.
+- Bulkhead isolation: audit/outbox saturation must not consume the API read/write pool.
+- SQL writes use idempotency keys for document-processing updates.
+
+### Redis scaling and fallback
+
+| Rule | Action |
+|---|---|
+| Redis memory > 70% for 15 min | Scale from Standard C1 to Standard C2 |
+| Redis memory > 70% on C2 for 15 min OR cache CPU > 75% for 15 min | Scale to Standard C3 |
+| Redis unavailable for 3 consecutive requests | Bypass cache for 5 min and read marketplace data directly from Azure SQL |
+| Redis recovers | Re-enable cache and warm top 50 marketplace queries |
+
+Marketplace cache TTL: 5 min. Invalidate keys when certification status or marketplace metrics change.
+
+### Async document pipeline scaling
+
+| Stage | Scaling rule | Failure behavior |
+|---|---|---|
+| React direct upload to Blob | SAS expires after 15 min; max file size 100 MB/request | Expired SAS requires a new upload permission request |
+| Event Grid | One Blob-created event per uploaded file | Failed delivery retries for 24 h, then logs operational incident |
+| Azure Queue Storage | Queue absorbs upload bursts; alert at > 1,000 pending messages | Upload remains `Pending`; UI shows delayed processing |
+| Azure Function Queue Trigger | Batch size 16, max 10 instances, max 160 concurrent messages | Retry 5 times; poison message sets document status to `Failed` |
+| Azure SQL status update | Status transition: `Pending -> Processing -> Completed/Failed` | Duplicate events are ignored by idempotency key |
+
+### Scalability bottlenecks
+
+| Bottleneck | Limit signal | Mitigation |
+|---|---|---|
+| Azure SQL shared write load | DTU/vCore CPU > 80% for 15 min OR deadlocks > 5/min | Add indexes, reduce query fan-out, scale to GP 8 vCores |
+| APIM per-client rate limit | Client hits 60 req/min or 10 concurrent connections | Return `429` with `Retry-After: 30`; frontend backs off |
+| Redis hot keys | One key > 20% of cache operations for 10 min | Add key partition by filter/page and warm common pages |
+| Queue backlog | > 1,000 pending messages or oldest message > 5 min | Keep max 10 instances, show `Processing delayed`, and prioritize oldest messages first |
+| Notification Hubs throughput | Notification failures > 2% for 10 min | Queue notification retries through outbox; API polling against Azure SQL-backed status remains fallback |
+
+### 10x-100x traffic changes
+
+| Growth | Required changes |
+|---|---|
+| 10x | API max instances 12, Function max instances 30, Redis Standard C3, Azure SQL GP 8 vCores |
+| 100x | Split marketplace read model from transactional SQL, partition document queues by tenant, use Azure Functions Premium plan, add Redis clustering, move APIM to Premium multi-region |
+
+
 ## Backend Testing and Quality Strategy
 
 ### Mandatory test project layout
@@ -1895,374 +2265,6 @@ Backend coverage gates must be enforced in CI:
 
 Developers may exclude generated OpenAPI files, DTOs that only carry data, and trivial configuration records from coverage, but must not exclude services, ACLs, repositories, or controllers.
 
-## Infrastructure (DevOps)
-<<Falta validar scripts finales de provisioning para CI/CD>>
-<<Podemos agregar reglas definitivas de branching y protección de ramas>>
-
-### CI/CD orchestration tool
-- Standard tool: **GitHub Actions** (single CI/CD control plane from this monorepo).
-- Rationale: repository-native workflows, PR checks, environments, approvals, and OIDC-based Azure deployment.
-
-### GitHub Environments
-Two environments must exist in the repo settings:
-
-| Environment | Branch | App suffix |
-|---|---|---|
-| `QA` | `staging` | `qa*` |
-| `Production` | `main` | `prod*` |
-
-#### Secrets (stored per GitHub environment)
-
-**QA environment:**
-```
-AZUREAPPSERVICE_CLIENTID_QA_FRONTEND
-AZUREAPPSERVICE_CLIENTID_QA_API
-AZUREAPPSERVICE_TENANTID_QA
-AZUREAPPSERVICE_SUBSCRIPTIONID_QA
-NEXT_PUBLIC_API_BASE_URL             ← build-time only, frontend
-```
-
-**Production environment:**
-```
-AZUREAPPSERVICE_CLIENTID_PROD_FRONTEND
-AZUREAPPSERVICE_CLIENTID_PROD_API
-AZUREAPPSERVICE_TENANTID_PROD
-AZUREAPPSERVICE_SUBSCRIPTIONID_PROD
-NEXT_PUBLIC_API_BASE_URL_PROD        ← build-time only, frontend
-```
-
-`NEXT_PUBLIC_API_BASE_URL*` is injected as `env:` on the `npm run build` step — baked into the Next.js bundle at build time. It is **not** an Azure app setting.
-
-**Azure login step:**
-```yaml
-- uses: azure/login@v2
-  with:
-    client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_QA_FRONTEND }}
-    tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_QA }}
-    subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_QA }}
-```
-
-### OIDC / Entra ID Setup (`infra/setup-github-oidc.ps1`)
-Run once per environment. Idempotent. Require `az login` + `gh auth login`.
-For each of the 4 app/role combos (`prod-frontend`, `prod-api`, `qa-frontend`, `qa-api`):
-
-1. Create Entra ID app registration named `dp-{env}-{role}-deploy`
-2. Create a service principal for it
-3. Add a federated credential:
-   - issuer: `https://token.actions.githubusercontent.com`
-   - subject: `repo:{owner/repo}:environment:{Production|QA}`
-   - audience: `api://AzureADTokenExchange`
-4. Assign `Contributor` role scoped to the specific Web App resource (not subscription-wide)
-5. Call `gh secret set` to write the 3 OIDC secrets into the correct GitHub environment
-
-Each Web App has its own Entra app registration and `clientId`. `tenantId` and `subscriptionId` are shared within an environment.
-
-### CI Workflows
-There should be one reusable backend validation workflow and two API deployment workflows. The deployment workflows must not publish unless all backend test lanes pass.
-
-**Triggers:**
-- Push to `main` → `paths: server/**` or `app/**` → deploys to Production
-- Push to `staging` → same path filters → deploys to QA
-- All support `workflow_dispatch`
-
-**Job pattern:**
-```
-build (environment: QA|Production, permissions: contents:read)
-  └─ deploy (needs: build, permissions: id-token:write + contents:read)
-```
-
-To enable OIDC token exchange with azure, `id-token: write` is required on the `deploy` job only.
-
-#### Required backend validation flow
-
-In addition to the deployment triggers listed above, backend CI must include a reusable validation job that runs on `pull_request` and can also be called from the staging and production API workflows before packaging.
-
-Required execution order:
-
-```yaml
-- name: Restore backend
-  run: dotnet restore server/QuietWealth.Backend.sln
-
-- name: Build backend
-  run: dotnet build server/QuietWealth.Backend.sln --configuration Release --no-restore
-
-- name: Unit tests
-  run: dotnet test server/tests/QuietWealth.Backend.UnitTests/QuietWealth.Backend.UnitTests.csproj --configuration Release --no-build --logger "trx;LogFileName=unit-tests.trx" --collect:"XPlat Code Coverage"
-
-- name: Integration tests
-  run: dotnet test server/tests/QuietWealth.Backend.IntegrationTests/QuietWealth.Backend.IntegrationTests.csproj --configuration Release --no-build --logger "trx;LogFileName=integration-tests.trx" --collect:"XPlat Code Coverage"
-
-- name: API tests
-  run: dotnet test server/tests/QuietWealth.Backend.ApiTests/QuietWealth.Backend.ApiTests.csproj --configuration Release --no-build --logger "trx;LogFileName=api-tests.trx" --collect:"XPlat Code Coverage"
-
-- name: Contract tests
-  run: dotnet test server/tests/QuietWealth.Backend.ContractTests/QuietWealth.Backend.ContractTests.csproj --configuration Release --no-build --logger "trx;LogFileName=contract-tests.trx" --collect:"XPlat Code Coverage"
-```
-
-Required workflow behaviors:
-- Upload all `*.trx` files and coverage artifacts even when one test lane fails.
-- Fail the workflow immediately if unit or contract tests fail.
-- Allow API and integration tests to finish in the same run so developers receive full defect information.
-- Publish only after all four test lanes are green.
-- Run a post-deploy readiness probe against `/health/ready`.
-
-#### Trigger Conditions & Job Dependencies
-
-| Workflow file | Branch | Path filter | Artifact name |
-|---|---|---|---|
-| `main_prodquietwealth-frontend.yml` | `main` | `app/**` | `node-app` |
-| `main_prodquietwealth-api.yml` | `main` | `server/**` | `.net-app` |
-| `staging_qaquietwealth-frontend.yml` | `staging` | `app/**` | `node-app` |
-| `staging_qaquietwealth-api.yml` | `staging` | `server/**` | `.net-app` |
-
-Artifact is passed between jobs via `actions/upload-artifact` / `actions/download-artifact`.
-
-#### Manual execution
-
-Developers must be able to run every backend lane locally before pushing:
-
-```powershell
-dotnet restore server/QuietWealth.Backend.sln
-dotnet build server/QuietWealth.Backend.sln --configuration Release --no-restore
-dotnet test server/tests/QuietWealth.Backend.UnitTests/QuietWealth.Backend.UnitTests.csproj --configuration Release --no-build
-dotnet test server/tests/QuietWealth.Backend.IntegrationTests/QuietWealth.Backend.IntegrationTests.csproj --configuration Release --no-build
-dotnet test server/tests/QuietWealth.Backend.ApiTests/QuietWealth.Backend.ApiTests.csproj --configuration Release --no-build
-dotnet test server/tests/QuietWealth.Backend.ContractTests/QuietWealth.Backend.ContractTests.csproj --configuration Release --no-build
-```
-
-To execute through GitHub Actions manually, `workflow_dispatch` must expose at least these inputs:
-- `environment`: `qa` or `prod`
-- `test_scope`: `all`, `unit`, `integration`, `api`, or `contract`
-- `deploy_after_tests`: `true` or `false`
-
-If `deploy_after_tests=false`, the workflow runs validation only and publishes test artifacts without deploying.
-
-#### Key Constraints
-
-- Each Web App has its **own** Entra app registration and `clientId` — do not share across frontend/API
-- `id-token: write` must be on the **deploy job**, not the build job
-- `NEXT_PUBLIC_*` vars are build-time settings, not runtime app settings — must be in the build job's `env:` block
-- `ConnectionStrings__QuietWealthSql`, `BlobStorage__ConnectionString`, and `NotificationHub__ConnectionString` use ASP.NET Core's double-underscore config convention
-- Bicep `@secure()` params never appear in deployment logs
-
-### Infrastructure as Code (IaC)
-- Standard tool: **Bicep** for provisioning and updates across environments.
-- Managed resources via Bicep:
-- Azure API Management
-- Azure App Service (API hosting)
-- Azure SQL Database
-- Azure Blob Storage
-- Azure Blob Lifecycle Management rules
-- Azure Managed Redis
-- Azure Event Grid
-- Azure Queue Storage
-- Azure Functions
-- Scheduled Azure Function
-- Azure Notification Hubs
-- Observability resources (Application Insights / Azure Monitor where applicable)
-
-#### Bicep Infra (`infra/`)
-
-**Scope:** `subscription` level — creates the resource group itself.
-
-**Locations:**
-- RG metadata: `eastus`
-- Resources deployed to: `westcentralus`
-
-**Per-environment resources:**
-- Linux App Service Plan `asp-dp-{env}` — SKU B1 (shared)
-- Frontend Web App (`Node|24-lts`) — startup: `npx --yes serve -s . -l $PORT`
-- API Web App (`DOTNETCORE|10.0`) — startup: `dotnet QuietWealth.Api.dll`
-
-**API app settings provisioned by Bicep:**
-```
-ASPNETCORE_ENVIRONMENT    = "Production" (prod) | "Development" (qa — enables Swagger)
-ConnectionStrings__QuietWealthSql = <from AZURE_SQL_CONNECTION_STRING env var>
-BlobStorage__ConnectionString     = <from AZURE_BLOB_CONNECTION_STRING env var>
-NotificationHub__ConnectionString = <from AZURE_NOTIFICATION_HUB_CONNECTION_STRING env var>
-AllowedOrigins__0         = https://{frontendAppName}.azurewebsites.net
-WEBSITE_RUN_FROM_PACKAGE  = 1
-```
-
-**Frontend app settings provisioned by Bicep:**
-```
-WEBSITE_NODE_DEFAULT_VERSION   = ~20
-SCM_DO_BUILD_DURING_DEPLOYMENT = false   ← disables Oryx; we ship pre-built /dist
-```
-
-**Parameters per environment:**
-
-| Param | qa | prod |
-|---|---|---|
-| `resourceGroupName` | `QuietWealth` | `QuietWealth` |
-| `resourceGroupLocation` | `eastus` | `eastus` |
-| `servicesLocation` | `westcentralus` | `westcentralus` |
-| `appServicePlanSku` | `B1` | `B1` |
-| `frontendAppName` | `qaquietwealth-frontend` | `prodquietwealth-frontend` |
-| `apiAppName` | `qaquietwealth-api` | `prodquietwealth-api` |
-
-**Secrets flow into Bicep via `.bicepparam`:**
-```bicep
-param sqlConnectionString             = readEnvironmentVariable('AZURE_SQL_CONNECTION_STRING', '')
-param blobStorageConnectionString     = readEnvironmentVariable('AZURE_BLOB_CONNECTION_STRING', '')
-param notificationHubConnectionString = readEnvironmentVariable('AZURE_NOTIFICATION_HUB_CONNECTION_STRING', '')
-```
-
-Set before running `deploy.ps1`:
-```powershell
-$env:AZURE_SQL_CONNECTION_STRING = '...'
-$env:AZURE_BLOB_CONNECTION_STRING = '...'
-$env:AZURE_NOTIFICATION_HUB_CONNECTION_STRING = '...'
-.\deploy.ps1 -Environment qa   # or prod
-```
-
-Local values live in `deploy.secrets.ps1` (gitignored via `*.secrets.ps1`). These secrets are never in GitHub Actions secrets — infra deployment is manual only.
-
-**Deploy command (run by `deploy.ps1`):**
-```powershell
-az deployment sub create `
-  --name        dp-{env}-{timestamp} `
-  --location    westcentralus `
-  --template-file main.bicep `
-  --parameters  parameters/{env}.bicepparam
-```
-
-### Environments and deployment model
-- GitHub Environments: `QA` and `Production` (isolated by resource group and deployment configuration).
-- Deployment pattern:
-- `QA`: automatic deployment from `staging` after CI success.
-- `Production`: automatic deployment from `main` after CI success, with protected environment approval.
-- Application deployment target: **Azure App Service** (no Kubernetes required for current scope).
-- Production release strategy: deployment slots (`staging` -> `production`) with slot swap and rollback.
-
-### Pipeline structure
-- `ci-frontend`: install, lint, test, build frontend.
-- `ci-backend`: restore, build, run unit tests, integration tests, API tests, contract tests, collect coverage, and run static analysis/format checks.
-- `security-scan`: dependency/license checks and secret scanning.
-- `infra-plan`: `bicep build` + `az deployment what-if` per environment.
-- `deploy-qa` / `deploy-prod`: apply infra changes (as approved), deploy application artifacts, and validate `/health/ready` before marking the release successful.
-
-### Governance and quality gates
-- Required PR checks before merge: frontend CI, backend CI, security scan.
-- Protected branches: `main` and release branches.
-- Environment approvals required for `Production`.
-- Artifact/version traceability required per deployment (commit SHA, build ID, release timestamp).
-
-## Availability
-Target availability: **99.9%** for the MVP and course demo scope. Higher availability targets require multi-region APIM, zone-redundant App Service, and zone-redundant SQL.
-
-### Resilience patterns (required)
-- Circuit breaker per downstream dependency (SQL, Blob, Notification Hubs, external APIs) to fail fast when an integration is unhealthy and protect API latency.
-- Timeouts + retries with exponential backoff (and jitter) for transient failures; retries only for idempotent operations or operations protected with idempotency keys.
-- Bulkhead isolation so one slow dependency cannot collapse the full API: separate connection pools, bounded concurrency, and isolated worker/queue paths by integration.
-
-### Controlled degradation (required)
-- Feature flags to disable non-critical capabilities quickly (notifications, advanced enrichments, non-essential validations) while preserving core transaction flows.
-- Partial responses when optional downstream data is unavailable; return available data + explicit `partial=true` and error details per missing section.
-- Absorption queues (outbox + async processing) for burst traffic and slow dependencies to decouple request handling from eventual side effects.
-
-With the most recent official SLA (April 8, 2026) for your stack:
-
-|Component	| SLA | Maximum theoretical downtime/year|
-|-----------|-----|--------------------------|
-|Azure API Management |	99.99% (Premium multi-region)	| 0.876 h|
-|Azure App Service	| 99.99% (with 2+ AZ) | 0.876 h|
-|Azure SQL Database	| 99.99% (no zone-redundant) / 99.995% (zone-redundant)	| 0.876 h / 0.438 h|
-|Azure Blob Storage	| 99.9% write hot; 99.99% read RA-GRS/RA-GZRS (depends on tier/redundancy) | 8.76 h / 0.876 h|
-|Azure Notification Hubs | 99.9% | 8.76 h|
-
-### Single points of failure (SPOF)
-- APIM in a single region or tier without multi-region.
-- App Service without Availability Zones.
-- SQL without zone redundancy + regional failover.
-- Blob in the synchronous write path (99.9% typical for write hot).
-- Notification Hubs if treated as a critical path of the transaction.
-
-### Recovery/mitigation for what doesn't provide 99.99% "by default"
-- APIM: use Premium with multi-region deployment and failover.
-- App Service: deploy across 2+ Availability Zones (ideally with a regional DR strategy).
-- SQL: zone-redundant + auto-failover group regional.
-- Blob: RA-GZRS/RA-GRS, retries with backoff, and decouple writing with asynchronous processing.
-- Notification Hubs: avoid blocking the main flow; use outbox + retries + DLQ + alternate channel (email/SMS) for incidents.
-
-## Scalability
-
-### Scaling model by component
-
-| Component | Scaling type | MVP baseline | Max target | Failure behavior |
-|---|---|---:|---:|---|
-| API App Service | Horizontal first, vertical if CPU stays high at max instances | 2 instances | 6 instances | APIM returns `429` after rate limit; API returns `503` if dependency pools are exhausted |
-| App Service Plan | Vertical scale for CPU/memory headroom | B1 | P1v3 | Deployment blocked if target SKU is unavailable |
-| Azure SQL Database | Vertical scale + query/index tuning | GP 2 vCores | GP 8 vCores | API returns `503`; writes are not silently dropped |
-| Azure Functions | Horizontal scale from Queue trigger | 1 instance | 10 instances | Message retries; after 5 failures goes to poison queue and document status becomes `Failed` |
-| Azure Managed Redis | Vertical tier scale | Standard C1 | Standard C3 | Fallback to direct Azure SQL reads for marketplace queries |
-
-### Auto-scaling rules
-
-| Target | Scale out trigger | Scale in trigger | Min | Max | Cooldown |
-|---|---|---|---:|---:|---|
-| API App Service | CPU > 70% for 10 min OR memory > 75% for 10 min OR API P95 latency > 800 ms for 10 min | CPU < 40% AND memory < 55% AND P95 latency < 400 ms for 30 min | 2 | 6 | 10 min |
-| Document Azure Functions | Queue depth > 100 messages OR oldest message age > 60 s | Queue depth < 20 messages AND oldest message age < 15 s for 15 min | 1 | 10 | 5 min |
-
-If the API reaches 6 instances and P95 stays above 1.5 s for 15 min, scale the App Service Plan from B1 to P1v3. <<Validate P1v3 budget with professor>>
-
-### Stateless API
-
-- API instances store no local session state.
-- Auth state lives in Auth0 JWTs and backend session metadata lives in Azure SQL.
-- Marketplace cache lives in Azure Managed Redis.
-- No sticky sessions are required; any API instance can serve any authenticated request.
-- If an API instance dies, the next request is routed to another instance and revalidates the JWT.
-
-### Azure SQL connection pooling
-
-| Pool | Max pool size | Timeout | Use |
-|---|---:|---:|---|
-| API read/write pool | 80 connections per API instance | 30 s command timeout | Marketplace, certification, document metadata |
-| Audit/outbox pool | 20 connections per API instance | 15 s command timeout | AuditEntry and OutboxMessage writes |
-| Function processing pool | 40 connections per Function instance | 30 s command timeout | Document processing status updates |
-
-- If a pool is exhausted for more than 5 s, return `503 Service Unavailable`.
-- Bulkhead isolation: audit/outbox saturation must not consume the API read/write pool.
-- SQL writes use idempotency keys for document-processing updates.
-
-### Redis scaling and fallback
-
-| Rule | Action |
-|---|---|
-| Redis memory > 70% for 15 min | Scale from Standard C1 to Standard C2 |
-| Redis memory > 70% on C2 for 15 min OR cache CPU > 75% for 15 min | Scale to Standard C3 |
-| Redis unavailable for 3 consecutive requests | Bypass cache for 5 min and read marketplace data directly from Azure SQL |
-| Redis recovers | Re-enable cache and warm top 50 marketplace queries |
-
-Marketplace cache TTL: 5 min. Invalidate keys when certification status or marketplace metrics change.
-
-### Async document pipeline scaling
-
-| Stage | Scaling rule | Failure behavior |
-|---|---|---|
-| React direct upload to Blob | SAS expires after 15 min; max file size 100 MB/request | Expired SAS requires a new upload permission request |
-| Event Grid | One Blob-created event per uploaded file | Failed delivery retries for 24 h, then logs operational incident |
-| Azure Queue Storage | Queue absorbs upload bursts; alert at > 1,000 pending messages | Upload remains `Pending`; UI shows delayed processing |
-| Azure Function Queue Trigger | Batch size 16, max 10 instances, max 160 concurrent messages | Retry 5 times; poison message sets document status to `Failed` |
-| Azure SQL status update | Status transition: `Pending -> Processing -> Completed/Failed` | Duplicate events are ignored by idempotency key |
-
-### Scalability bottlenecks
-
-| Bottleneck | Limit signal | Mitigation |
-|---|---|---|
-| Azure SQL shared write load | DTU/vCore CPU > 80% for 15 min OR deadlocks > 5/min | Add indexes, reduce query fan-out, scale to GP 8 vCores |
-| APIM per-client rate limit | Client hits 60 req/min or 10 concurrent connections | Return `429` with `Retry-After: 30`; frontend backs off |
-| Redis hot keys | One key > 20% of cache operations for 10 min | Add key partition by filter/page and warm common pages |
-| Queue backlog | > 1,000 pending messages or oldest message > 5 min | Keep max 10 instances, show `Processing delayed`, and prioritize oldest messages first |
-| Notification Hubs throughput | Notification failures > 2% for 10 min | Queue notification retries through outbox; API polling against Azure SQL-backed status remains fallback |
-
-### 10x-100x traffic changes
-
-| Growth | Required changes |
-|---|---|
-| 10x | API max instances 12, Function max instances 30, Redis Standard C3, Azure SQL GP 8 vCores |
-| 100x | Split marketplace read model from transactional SQL, partition document queues by tenant, use Azure Functions Premium plan, add Redis clustering, move APIM to Premium multi-region |
 
 ## Backend key workflows
 
