@@ -1174,7 +1174,7 @@ src/
 - File storage: Azure Blob Storage
 - Blob archival: Azure Blob Lifecycle Management for Cool, Cold, and Archive tier transitions
 - SQL archival orchestration: Scheduled Azure Function export process
-- Cache: Azure Managed Redis
+- Cache: Azure Cache Redis
 - Asynchronous document processing: Azure Blob Storage events via Azure Event Grid, Azure Queue Storage, and Azure Function Queue Trigger
 - Notifications: Azure Notification Hubs
 - Load balancing: no dedicated load balancer required for the expected traffic profile
@@ -4430,7 +4430,7 @@ Integrated Identity Providers:
 - JWT validation
 - Session validation in backend
 - HTTPS required for all authentication traffic
-- MFA support available through Auth0
+- MFA enforced for all roles through Auth0 and Microsoft Entra ID.
 - Client ID is public frontend configuration
 - Client Secret is backend-only configuration and is never stored in JWT claims
 - Token expiration validation
