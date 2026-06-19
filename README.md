@@ -1176,7 +1176,7 @@ AZUREAPPSERVICE_CLIENTID_QA_FRONTEND
 AZUREAPPSERVICE_CLIENTID_QA_API
 AZUREAPPSERVICE_TENANTID_QA
 AZUREAPPSERVICE_SUBSCRIPTIONID_QA
-NEXT_PUBLIC_API_BASE_URL             ← build-time only, frontend
+VITE_PUBLIC_API_BASE_URL             ← build-time only, frontend
 ```
 
 **Production environment:**
@@ -1185,10 +1185,10 @@ AZUREAPPSERVICE_CLIENTID_PROD_FRONTEND
 AZUREAPPSERVICE_CLIENTID_PROD_API
 AZUREAPPSERVICE_TENANTID_PROD
 AZUREAPPSERVICE_SUBSCRIPTIONID_PROD
-NEXT_PUBLIC_API_BASE_URL_PROD        ← build-time only, frontend
+VITE_PUBLIC_API_BASE_URL_PROD        ← build-time only, frontend
 ```
 
-`NEXT_PUBLIC_API_BASE_URL*` is injected as `env:` on the `npm run build` step — baked into the Vite client bundle at build time. It is **not** an Azure app setting.
+`VITE_PUBLIC_API_BASE_URL*` is injected as `env:` on the `npm run build` step — baked into the Vite client bundle at build time. It is **not** an Azure app setting.
 
 **Azure login step:**
 ```yaml
@@ -1298,7 +1298,7 @@ If `deploy_after_tests=false`, the workflow runs validation only and publishes t
 
 - Each Web App has its **own** Entra app registration and `clientId` — do not share across frontend/API
 - `id-token: write` must be on the **deploy job**, not the build job
-- `NEXT_PUBLIC_*` vars are build-time settings, not runtime app settings — must be in the build job's `env:` block
+- `VITE_PUBLIC_*` vars are build-time settings, not runtime app settings — must be in the build job's `env:` block
 - `ConnectionStrings__QuietWealthSql`, `BlobStorage__ConnectionString`, and `NotificationHub__ConnectionString` use ASP.NET Core's double-underscore config convention
 - Bicep `@secure()` params never appear in deployment logs
 
