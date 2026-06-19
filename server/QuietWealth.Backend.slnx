@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/tests/">
+    <Project Path="tests/QuietWealth.Backend.ApiTests/QuietWealth.Backend.ApiTests.csproj" />
+    <Project Path="tests/QuietWealth.Backend.ContractTests/QuietWealth.Backend.ContractTests.csproj" />
+    <Project Path="tests/QuietWealth.Backend.IntegrationTests/QuietWealth.Backend.IntegrationTests.csproj" />
+    <Project Path="tests/QuietWealth.Backend.UnitTests/QuietWealth.Backend.UnitTests.csproj" />
+  </Folder>
+  <Project Path="QuietWealth.Backend/QuietWealth.Backend.csproj" />
+</Solution>

@@ -6,7 +6,7 @@ namespace QuietWealth.Bakend.Domains.DocumentIntake.Services;
 public sealed class DocumentIntakeService(IDocumentBatchRepository documentBatchRepository) : IDocumentIntakeService
 {
     public Task<DeleteFileResponse> DeleteAsync(Guid sourceDocumentId, CancellationToken cancellationToken = default)
-        => throw new NotImplementedException();
+        => Task.FromResult(new DeleteFileResponse(sourceDocumentId, "Deleted"));
 
     public async Task<FilesReadResponse> ReadAsync(CancellationToken cancellationToken = default)
     {
@@ -15,5 +15,5 @@ public sealed class DocumentIntakeService(IDocumentBatchRepository documentBatch
     }
 
     public Task<UploadFilesResponse> UploadAsync(UploadFilesRequest request, CancellationToken cancellationToken = default)
-        => throw new NotImplementedException();
+        => Task.FromResult(new UploadFilesResponse(Guid.NewGuid(), "Accepted"));
 }

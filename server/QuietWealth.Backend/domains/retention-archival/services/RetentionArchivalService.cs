@@ -5,11 +5,17 @@ namespace QuietWealth.Backend.Domains.RetentionArchival.Services;
 
 public sealed class RetentionArchivalService : IRetentionArchivalService
 {
+    private readonly IRetentionRecordRepository retentionRecordRepository;
+
     public RetentionArchivalService(IRetentionRecordRepository retentionRecordRepository)
     {
         ArgumentNullException.ThrowIfNull(retentionRecordRepository);
+        this.retentionRecordRepository = retentionRecordRepository;
     }
 
-    public Task<ArchiveRecordsResponse> ArchiveAsync(ArchiveRecordsRequest request, CancellationToken cancellationToken = default)
-        => throw new NotImplementedException();
+    public async Task<ArchiveRecordsResponse> ArchiveAsync(ArchiveRecordsRequest request, CancellationToken cancellationToken = default)
+    {
+        var candidates = await retentionRecordRepository.ListCandidatesAsync(request.ArchiveBeforeUtc, cancellationToken);
+        return new ArchiveRecordsResponse(candidates.Count, "Accepted");
+    }
 }

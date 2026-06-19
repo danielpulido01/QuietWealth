@@ -9,8 +9,19 @@ public sealed class IdentityAccessService(IUserSessionRepository userSessionRepo
         => userSessionRepository.GetCurrentSessionAsync(cancellationToken);
 
     public Task<LoginResponse> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default)
-        => throw new NotImplementedException();
+    {
+        var session = new UserSession(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            request.Username,
+            ["User"],
+            ["platform.access"],
+            "placeholder-jwt-token",
+            DateTimeOffset.UtcNow.AddHours(1));
+
+        return Task.FromResult(new LoginResponse(session));
+    }
 
     public Task LogoutAsync(LogoutRequest request, CancellationToken cancellationToken = default)
-        => throw new NotImplementedException();
+        => Task.CompletedTask;
 }

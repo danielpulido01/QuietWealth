@@ -1,0 +1,12 @@
+{
+  "sub": "auth0|quietwealth-test-user",
+  "email": "qa.user@quietwealth.test",
+  "name": "QA User",
+  "roles": [
+    "Expert"
+  ],
+  "permissions": [
+    "certification.review",
+    "marketplace.read"
+  ]
+}

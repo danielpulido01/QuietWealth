@@ -1380,6 +1380,7 @@ Minimum unit-test targets:
 
 Example 1: [DocumentIntakeService.cs](server/QuietWealth.Backend/domains/document-intake/services/DocumentIntakeService.cs) should return repository data unchanged through [FilesReadResponse.cs](server/QuietWealth.Backend/domains/document-intake/models/FilesReadResponse.cs).
 
+[DocumentIntakeServiceTests.cs](server/tests/QuietWealth.Backend.UnitTests/DocumentIntakeServiceTests.cs)
 ```csharp
 using FluentAssertions;
 using Moq;
@@ -1418,6 +1419,7 @@ public sealed class DocumentIntakeServiceTests
 
 Example 2: [IdentityAccessService.cs](server/QuietWealth.Backend/domains/identity-access/services/IdentityAccessService.cs) currently delegates [GetCurrentSessionAsync](server/QuietWealth.Backend/domains/identity-access/repositories/IUserSessionRepository.cs) directly to [IUserSessionRepository](server/QuietWealth.Backend/domains/identity-access/repositories/IUserSessionRepository.cs).
 
+[IdentityAccessServiceTests.cs](server/tests/QuietWealth.Backend.UnitTests/IdentityAccessServiceTests.cs)
 ```csharp
 using FluentAssertions;
 using Moq;
@@ -1456,6 +1458,7 @@ public sealed class IdentityAccessServiceTests
 
 Example 3: configuration seams in [AzureSqlConnectionFactory.cs](server/QuietWealth.Backend/shared/Infrastructure/AzureSqlConnectionFactory.cs) should be unit-tested without containers.
 
+[AzureSqlConnectionFactoryTests.cs](server/tests/QuietWealth.Backend.UnitTests/AzureSqlConnectionFactoryTests.cs)
 ```csharp
 using FluentAssertions;
 using Microsoft.Extensions.Options;
@@ -1532,6 +1535,7 @@ CI should still prefer Testcontainers so each test run controls its own dependen
 
 Example 1: [AzureSqlConnectionFactory.cs](server/QuietWealth.Backend/shared/Infrastructure/AzureSqlConnectionFactory.cs) can be verified through real DI configuration binding.
 
+[AzureSqlConnectionFactoryIntegrationTests.cs](server/tests/QuietWealth.Backend.IntegrationTests/AzureSqlConnectionFactoryIntegrationTests.cs)
 ```csharp
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
@@ -1627,6 +1631,7 @@ The host bootstrap below is a placeholder for the future application entry point
 
 Example 1: verify `/api/metadata/openapi` returns the published contract location.
 
+[MetadataApiTests.cs](server/tests/QuietWealth.Backend.ApiTests/MetadataApiTests.cs)
 ```csharp
 using System.Net;
 using System.Text.Json;
@@ -1659,6 +1664,7 @@ public sealed class MetadataApiTests : IClassFixture<WebApplicationFactory<Progr
 
 Example 2: verify `/api/auth/session` returns the session shape when the backend is bootstrapped with a fake [IUserSessionRepository](server/QuietWealth.Backend/domains/identity-access/repositories/IUserSessionRepository.cs).
 
+[AuthSessionApiTests.cs](server/tests/QuietWealth.Backend.ApiTests/AuthSessionApiTests.cs)
 ```csharp
 using System.Text.Json;
 using FluentAssertions;
@@ -1738,6 +1744,7 @@ Use `AddHealthChecks()` during service registration in the future `server/QuietW
 
 Example registration:
 
+[Program.cs](/server/QuietWealth.Backend/Program.cs)
 ```csharp
 using QuietWealth.Bakend.Shared.Configuration;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -1848,6 +1855,32 @@ Required initial ACL contract targets:
 - `document-intake-to-certification-validation`
 - `certification-validation-to-marketplace`
 - `all-domains-to-audit-observability`
+
+Example:
+[IdentityAccessAclContractExampleTests.cs](server/tests/QuietWealth.Backend.ContractTests/IdentityAccessAclContractExampleTests.cs)
+```csharp
+using System.Text.Json;
+using FluentAssertions;
+
+namespace QuietWealth.Backend.ContractTests;
+
+public sealed class IdentityAccessAclContractExampleTests
+{
+    [Fact]
+    public void Auth0_claim_fixture_contains_required_boundary_fields()
+    {
+        var fixturePath = Path.Combine(AppContext.BaseDirectory, "Fixtures", "auth0-claims.sample.json");
+        using var document = JsonDocument.Parse(File.ReadAllText(fixturePath));
+
+        var root = document.RootElement;
+
+        root.GetProperty("sub").GetString().Should().NotBeNullOrWhiteSpace();
+        root.GetProperty("email").GetString().Should().Be("qa.user@quietwealth.test");
+        root.GetProperty("roles").EnumerateArray().Select(x => x.GetString()).Should().Contain("Expert");
+        root.GetProperty("permissions").EnumerateArray().Select(x => x.GetString()).Should().Contain("certification.review");
+    }
+}
+```
 
 ### Coverage and quality gates
 
