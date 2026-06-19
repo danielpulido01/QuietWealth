@@ -204,7 +204,7 @@ Evaluate user ability to:
 The frontend follows an atomic design for component architecture.
 
 ### 1.3.2 Component Hierarchy
-[Components](/app/components)
+[Components](/app/src/components)
 
 Current component implementation uses 5 atomic UI layers plus shared support modules:
 ```
@@ -222,7 +222,7 @@ app/
 
 ### 1.3.3 Component Categories
 
-#### [Atoms](/app/components/atoms)
+#### [Atoms](/app/src/components/atoms)
 Reusable low-level UI components (no business logic)
 
 - Must be pure UI
@@ -250,7 +250,7 @@ Example usage:
 </Button>
 ```
 
-#### [Molecules](/app/components/molecules)
+#### [Molecules](/app/src/components/molecules)
 Built from primitives
 
 - Combine primitives
@@ -275,7 +275,7 @@ SMECard
  └ Button
 ```
 
-#### [Organisms](/app/components/organisms)
+#### [Organisms](/app/src/components/organisms)
 Components responsible for larger layout composition and section structure.
 
 - Must not contain business logic
@@ -298,7 +298,7 @@ InvestmentDetailPanel
  └ MaskedValue
 ```
 
-#### [Templates](/app/components/templates)
+#### [Templates](/app/src/components/templates)
 Layout shells
 
 - Wrap authenticated and public route layouts
@@ -309,11 +309,10 @@ AuthenticatedLayout
 PublicLayout
 ```
 
-#### [Pages](/app/components/pages)
+#### [Pages](/app/src/components/pages)
 Feature-specific components tied to a business process.
 
 - Coordinate business logic through hooks, which interact with services
-- Manage state
 - Compose composites + layouts
 - Are mounted by route definitions via Next.js App Router
 
@@ -325,23 +324,7 @@ DocumentUploadPage
 ExpertValidationPage
 ```
 
-### 1.3.4 Component Reuse Strategy
-
-Before creating a new component, developers must:
-1. Search in [Atoms](/app/components/atoms)
-2. Search in [Molecules](/app/components/molecules)
-
-If a similar component exists, extend it by adding props, variants, or composition instead of duplicating code.
-
-Components must be configurable using props instead of duplication.
-
-```
-<Button variant="primary" />
-<Button variant="secondary" />
-<Button variant="danger" />
-```
-
-#### [Hooks](/app/components/hooks)
+### [Hooks](/app/src/components/hooks)
 Components use hooks for business logic.
 
 Example:
@@ -358,7 +341,7 @@ usePolicies()
 useSession()
 ```
 
-Hooks use [Services](/app/services), [Auth](/app/auth/AuthFacade.ts), and [State](/app/state) for orchestration:
+Hooks use [Services](/app/src/services), [Auth service](/app/src/auth/authService.ts) and [State](/app/src/state) for orchestration:
 
 Example:
 ```
@@ -366,8 +349,24 @@ applicationFacade.ts
 CertificationPollingManager.ts
 ```
 
-### 1.3.5 [Styles](/app/components/styles)
-All visual styles must be centralized using design tokens in [tokens.ts](/app/components/styles/tokens.ts)
+### 1.3.4 Component Reuse Strategy
+
+Before creating a new component, developers must:
+1. Search in [Atoms](/app/src/components/atoms)
+2. Search in [Molecules](/app/src/components/molecules)
+
+If a similar component exists, extend it by adding props, variants, or composition instead of duplicating code.
+
+Components must be configurable using props instead of duplication.
+
+```
+<Button variant="primary" />
+<Button variant="secondary" />
+<Button variant="danger" />
+```
+
+### 1.3.5 [Styles](/app/src/components/styles)
+All visual styles must be centralized using design tokens in [tokens.ts](/app/src/components/styles/tokens.ts)
 
 Example:
 ```TypeScript
@@ -395,8 +394,7 @@ export const radius = {
 }
 ```
 
-#### [Theme](/app/components/styles/theme.ts)
-How do I switch dark/light mode? How do I add a new theme?
+#### [Theme](/app/src/components/styles/theme.ts)
 
 Example:
 ```TypeScript
@@ -432,10 +430,10 @@ Certification status is communicated with both a color and a text label, never c
 ### 1.3.6 Internationalization Strategy
 All text must be externalized.
 
-#### [i18n](/app/components/i18n)
+#### [i18n](/app/src/components/i18n)
 Insert new languages in this folder:
-- [es](/app/components/i18n/es.json)
-- [en](/app/components/i18n/en.json)
+- [es](/app/src/components/i18n/es.json)
+- [en](/app/src/components/i18n/en.json)
 
 Example:
 ```JSON
@@ -469,7 +467,7 @@ const { t } = useTranslation()
 ```
 
 ### 1.3.7 Responsiveness Strategy
-Responsiveness must be centralized using breakpoint tokens in [breakpoints.ts](/app/components/styles/breakpoints.ts)
+Responsiveness must be centralized using breakpoint tokens in [breakpoints.ts](/app/src/components/styles/breakpoints.ts)
 
 Example:
 ```TypeScript
@@ -520,7 +518,7 @@ Required flows:
 | Document upload | `document-upload.spec.ts` |
 | Expert validation | `expert-validation.spec.ts` |
 
-#### Performance Guidelines
+### 1.3.9 Performance Guidelines
 Developers must:
 - Use `React.memo` for heavy components
 - Use `lazy()` for feature modules
@@ -565,6 +563,8 @@ export function AppRoutes() {
 - Zod (runtime validation)
 - Axios via `HttpClientFacade`
 - JWT bearer tokens for protected API requests
+- React Router
+- Context API
 
 ### 1.4.2 Authentication
 Uses Auth0 federated with Microsoft Entra ID.
@@ -593,7 +593,7 @@ Access tokens stay in memory (Redux); the refresh token sits in an `HttpOnly`, `
 ### 1.4.3 Authorization
 
 #### 1.4.3.1 Roles
-Roles are found in [roles.ts](/app/auth/policies/roles.ts)
+Roles are found in [roles.ts](/app/src/auth/policies/roles.ts)
 
 | Code | Description |
 |---|---|
@@ -603,7 +603,7 @@ Roles are found in [roles.ts](/app/auth/policies/roles.ts)
 | `sys_admin` | Full access to the platform, including user, role, and audit administration |
 
 #### 1.4.3.2 Permissions
-Permissions are found in [permissions.ts](/app/auth/policies/permissions.ts)
+Permissions are found in [permissions.ts](/app/src/auth/policies/permissions.ts)
 
 **Permission Catalog**
 | Code | Description |
@@ -618,7 +618,7 @@ Permissions are found in [permissions.ts](/app/auth/policies/permissions.ts)
 | `audit_log.read` | Admin can view the full system audit log |
 
 #### 1.4.3.3 Role-Permission Mapping
-Role to permissions mapping is found in [rolePermissions.ts](/app/auth/policies/rolePermissions.ts)
+Role to permissions mapping is found in [rolePermissions.ts](/app/src/auth/policies/rolePermissions.ts)
 
 | Role | Permissions |
 |---|---|
@@ -628,7 +628,7 @@ Role to permissions mapping is found in [rolePermissions.ts](/app/auth/policies/
 | `sys_admin` | All permissions |
 
 #### 1.4.3.4 Access Policies
-Access Policies are found in [accessPolicy.ts](/app/auth/policies/accessPolicy.ts)
+Access Policies are found in [accessPolicy.ts](/app/src/auth/policies/accessPolicy.ts)
 
 | Policy | Required Permissions | Description |
 |---|---|---|
@@ -644,7 +644,7 @@ Access Policies are found in [accessPolicy.ts](/app/auth/policies/accessPolicy.t
 #### 1.4.3.5 Routing Protection
 This project has three methods of routing protection.
 
-**[AuthGuard.tsx](/app/auth/guards/AuthGuard.tsx)**
+**[AuthGuard.tsx](/app/src/auth/guards/AuthGuard.tsx)**
 
 Use this guard to prevent unauthenticated access to specific routes.
 
@@ -657,7 +657,7 @@ Example usage:
 </AuthGuard>
 ```
 
-**[GuestGuard.tsx](/app/auth/guards/GuestGuard.tsx)**
+**[GuestGuard.tsx](/app/src/auth/guards/GuestGuard.tsx)**
 
 Use this guard to prevent authenticated users accessing unauthenticated sites.
 
@@ -668,7 +668,7 @@ Example usage:
 </GuestGuard>
 ```
 
-**[PolicyGuard.tsx](/app/auth/guards/PolicyGuard.tsx)**
+**[PolicyGuard.tsx](/app/src/auth/guards/PolicyGuard.tsx)**
 
 Use this guard when an entire route or page requires a specific access policy.
 
@@ -701,17 +701,17 @@ const { hasAccess } = usePolicies();
 
 **To add additional roles/permissions:**
 
-1. Add role definition in [roles.ts](/app/auth/policies/roles.ts)
-2. Add permission in [permissions.ts](/app/auth/policies/permissions.ts)
-3. Map policy to permissions in [accessPolicy.ts](/app/auth/policies/accessPolicy.ts)
+1. Add role definition in [roles.ts](/app/src/auth/policies/roles.ts)
+2. Add permission in [permissions.ts](/app/src/auth/policies/permissions.ts)
+3. Map policy to permissions in [accessPolicy.ts](/app/src/auth/policies/accessPolicy.ts)
 
 ### 1.4.4 API Communication
 
 #### Centralized API Client
-[client.ts](/app/services/client.ts)
+[client.ts](/app/src/services/client.ts)
 
 #### HTTP Interceptors
-[httpInterceptors.ts](/app/services/httpInterceptors.ts)
+[httpInterceptors.ts](/app/src/services/httpInterceptors.ts)
 
 ### 1.4.5 Storage Rules
 
@@ -725,12 +725,23 @@ const { hasAccess } = usePolicies();
 - Access tokens
 - Refresh tokens
 - Passwords
+- one-time tokens
 - Raw permission payloads if sensitive
 
 **Preferred storage model**
-- Access token stored in memory (Redux `authSlice`)
-- Refresh token in `HttpOnly`, `Secure`, `SameSite=Strict` cookie
-- Frontend session state kept in memory through `SessionProvider`
+- backend session stored in secure, HTTP-only, same-site cookies
+- frontend session state kept in memory through SessionProvider
+
+#### Examples
+```ts
+// Allowed: non-sensitive preferences
+localStorage.setItem("theme", "dark");
+localStorage.setItem("language", "en");
+
+// Forbidden: secrets
+// localStorage.setItem("accessToken", token);
+// localStorage.setItem("password", password);
+```
 
 **Enforcement**
 - Keep authentication credentials out of `localStorage` and `sessionStorage` — enforced by ESLint ban rule.
@@ -744,7 +755,7 @@ Responsibilities:
 - Clear in-memory session data
 - Redirect to login
 
-[useAuth.ts](/app/components/hooks/useAuth.ts)
+[useAuth.ts](/app/src/components/hooks/useAuth.ts)
 
 ### 1.4.7 Session Expiration
 
@@ -757,6 +768,9 @@ When the backend returns 401 Unauthorized:
 ## 1.5 Layered design
 
 The frontend uses a five-layer architecture with clear responsibilities and downward-only dependencies.
+
+**Architecture diagram:**
+![Layerd design diagram](Media/frontend-layerded-design.png)
 
 **Layer 1 — Presentation:** Pages and components render data and capture input. They do not call APIs directly. Next.js App Router and route guards protect navigation.
 
@@ -772,12 +786,12 @@ The frontend uses a five-layer architecture with clear responsibilities and down
 
 | Folder | Layer | Purpose |
 |--------|-------|---------|
-| `app/components/pages/`, `app/**/page.tsx` | Layer 1 | Route entry points and feature screens |
-| `app/components/atoms/`, `molecules/`, `organisms/`, `templates/` | Layer 1 | Atomic UI components |
-| `app/components/hooks/` | Layer 2 | Application orchestration hooks |
-| `app/models/`, `app/validation/`, `app/auth/policies/` | Layer 3 | Domain types, Zod schemas, access policies |
-| `app/services/`, `app/auth/AuthFacade.ts` | Layer 4 | HTTP facade, auth service, interceptors |
-| `app/state/`, `app/utils/`, `app/settings/`, `app/components/i18n/`, `app/components/styles/` | Layer 5 | Redux store, logger, settings, i18n, tokens |
+| `app/src/components/pages/`, `app/**/page.tsx` | Layer 1 | Route entry points and feature screens |
+| `app/src/components/atoms/`, `molecules/`, `organisms/`, `templates/` | Layer 1 | Atomic UI components |
+| `app/src/components/hooks/` | Layer 2 | Application orchestration hooks |
+| `app/src/models/`, `app/src/validation/`, `app/src/auth/policies/` | Layer 3 | Domain types, Zod schemas, access policies |
+| `app/src/services/`, `app/src/auth/AuthFacade.ts` | Layer 4 | HTTP facade, auth service, interceptors |
+| `app/src/state/`, `app/src/utils/`, `app/src/settings/`, `app/src/components/i18n/`, `app/src/components/styles/` | Layer 5 | Redux store, logger, settings, i18n, tokens |
 
 **Dependency rules:**
 - Presentation can only call Application (hooks) and Infrastructure.
@@ -785,9 +799,6 @@ The frontend uses a five-layer architecture with clear responsibilities and down
 - Domain Logic can only use Infrastructure.
 - Services can only use Infrastructure.
 - **No layer may call upward.**
-
-<img width="1408" height="768" alt="Gemini_Generated_Image_cm3n28cm3n28cm3n" src="https://github.com/user-attachments/assets/2df99b1f-4c0f-4090-b4d4-e6dd446e3700" />
-
 
 **Example: Login flow**
 
@@ -801,13 +812,13 @@ The frontend uses a five-layer architecture with clear responsibilities and down
 
 ### Singleton
 The following classes currently use the singleton pattern:
-- [logger.ts](/app/utils/logger.ts) — `Logger`
-- [error-handler.ts](/app/utils/error-handler.ts) — `ExceptionHandler`
-- [AuthFacade.ts](/app/auth/AuthFacade.ts) — `AuthFacade`
-- [sessionManager.ts](/app/state/sessionManager.ts) — `SessionManager`
-- [certificationPollingStore.ts](/app/state/certificationPollingStore.ts) — `CertificationPollingStore`
-- [certificationPollingManager.ts](/app/state/certificationPollingManager.ts) — `CertificationPollingManager`
-- [applicationFacade.ts](/app/services/applicationFacade.ts) — `ApplicationServiceFacade`
+- [logger.ts](/app/src/utils/logger.ts) — `Logger`
+- [error-handler.ts](/app/src/utils/error-handler.ts) — `ExceptionHandler`
+- [AuthFacade.ts](/app/src/auth/AuthFacade.ts) — `AuthFacade`
+- [sessionManager.ts](/app/src/state/sessionManager.ts) — `SessionManager`
+- [certificationPollingStore.ts](/app/src/state/certificationPollingStore.ts) — `CertificationPollingStore`
+- [certificationPollingManager.ts](/app/src/state/certificationPollingManager.ts) — `CertificationPollingManager`
+- [applicationFacade.ts](/app/src/services/applicationFacade.ts) — `ApplicationServiceFacade`
 
 #### When to apply here
 Apply only if all are true:
@@ -855,10 +866,10 @@ export const logger = Logger.getInstance();
 
 ### Observer
 Use these files as the canonical pattern:
-- [certification.types.ts](/app/state/certification.types.ts)
-- [certificationPollingStore.ts](/app/state/certificationPollingStore.ts)
-- [certificationPollingManager.ts](/app/state/certificationPollingManager.ts)
-- [useCertificationProgress.ts](/app/components/hooks/useCertificationProgress.ts)
+- [certification.types.ts](/app/src/state/certification.types.ts)
+- [certificationPollingStore.ts](/app/src/state/certificationPollingStore.ts)
+- [certificationPollingManager.ts](/app/src/state/certificationPollingManager.ts)
+- [useCertificationProgress.ts](/app/src/components/hooks/useCertificationProgress.ts)
 
 #### 1) State Contract (`*.types.ts`)
 Define progress phases, run state (`idle`, `running`, `completed`, etc.), progress snapshot shape, and `createInitial...State()` factory.
@@ -901,9 +912,9 @@ class XStore {
 ```
 
 ### Proxy — Auth Middleware
-- [AuthFacade.ts](/app/auth/AuthFacade.ts)
-- [AuthMiddleware.ts](/app/auth/AuthMiddleware.ts)
-- [client.ts](/app/services/client.ts)
+- [AuthFacade.ts](/app/src/auth/AuthFacade.ts)
+- [AuthMiddleware.ts](/app/src/auth/AuthMiddleware.ts)
+- [client.ts](/app/src/services/client.ts)
 
 `AuthMiddleware` sits between services and the raw HTTP client, attaching the bearer token and handling 401 cases. Services call `HttpClientFacade` and never attach tokens themselves.
 
@@ -920,10 +931,10 @@ class AuthMiddleware {
 Expose a single service access surface for hooks while keeping auth and HTTP implementation details behind facades.
 
 #### Files to keep aligned
-- [client.ts](/app/services/client.ts)
-- [AuthFacade.ts](/app/auth/AuthFacade.ts)
-- [applicationFacade.ts](/app/services/applicationFacade.ts)
-- [useApplicationServices.ts](/app/components/hooks/useApplicationServices.ts)
+- [client.ts](/app/src/services/client.ts)
+- [AuthFacade.ts](/app/src/auth/AuthFacade.ts)
+- [applicationFacade.ts](/app/src/services/applicationFacade.ts)
+- [useApplicationServices.ts](/app/src/components/hooks/useApplicationServices.ts)
 
 #### Contracts
 
@@ -977,7 +988,7 @@ class ExponentialBackoffStrategy implements IPollingStrategy {
 ```
 
 ### Queue-based logging — Auth Audit Events
-[AuthAuditQueue.ts](/app/auth/AuthAuditQueue.ts)
+[AuthAuditQueue.ts](/app/src/auth/AuthAuditQueue.ts)
 
 Auth events (login, logout, refresh, permission denial) are enqueued and flushed asynchronously to Application Insights, avoiding latency during authentication.
 
@@ -998,7 +1009,7 @@ class AuthAuditQueue {
 The `/app` folder contains the application scaffold organized by architectural layers and functional domains, following the 5-layer architecture specified in sections 1.1 to 1.6.
 
 ```txt
-app/
+src/
 ├── layout.tsx · page.tsx · globals.css
 ├── login/page.tsx
 ├── marketplace/page.tsx
