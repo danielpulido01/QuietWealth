@@ -214,7 +214,11 @@ async function throwApiError(
   throw error;
 }
 
-export async function ensureOk(response: Response, request: SourceRequestMeta, scope = "api-client") {
+export async function ensureOk(
+  response: Response,
+  request: SourceRequestMeta,
+  scope = "api-client",
+) {
   if (response.ok) {
     return;
   }
@@ -245,13 +249,19 @@ class SourceHttpClient implements ApiSourceClient {
     let response = await this.fetch(input, init);
 
     if (response.status === 401 && this.config.refreshOnUnauthorizedPath) {
-      const refreshResponse = await this.fetch(this.config.refreshOnUnauthorizedPath, { method: "POST" });
+      const refreshResponse = await this.fetch(this.config.refreshOnUnauthorizedPath, {
+        method: "POST",
+      });
       if (refreshResponse.ok) {
         response = await this.fetch(input, init);
       }
     }
 
-    return interceptHttpResponse(response, { method, url }, { handleUnauthorized: this.config.handleUnauthorized });
+    return interceptHttpResponse(
+      response,
+      { method, url },
+      { handleUnauthorized: this.config.handleUnauthorized },
+    );
   }
 
   async json<T>(input: string, init: RequestInit = {}) {
@@ -270,7 +280,11 @@ class SourceHttpClient implements ApiSourceClient {
     return (await response.json()) as T;
   }
 
-  async jsonWithSchema<TSchema extends ZodTypeAny>(input: string, schema: TSchema, init: RequestInit = {}) {
+  async jsonWithSchema<TSchema extends ZodTypeAny>(
+    input: string,
+    schema: TSchema,
+    init: RequestInit = {},
+  ) {
     const method = (init.method ?? "GET").toUpperCase();
     const url = this.buildUrl(input);
     const response = await this.fetch(input, init);
@@ -285,7 +299,11 @@ class SourceHttpClient implements ApiSourceClient {
     });
   }
 
-  async authJsonWithSchema<TSchema extends ZodTypeAny>(input: string, schema: TSchema, init: RequestInit = {}) {
+  async authJsonWithSchema<TSchema extends ZodTypeAny>(
+    input: string,
+    schema: TSchema,
+    init: RequestInit = {},
+  ) {
     const method = (init.method ?? "GET").toUpperCase();
     const url = this.buildUrl(input);
     const response = await this.authFetch(input, init);
@@ -325,7 +343,11 @@ class SourceHttpClient implements ApiSourceClient {
         durationMs: Math.round(performance.now() - start),
       });
 
-      return interceptHttpResponse(response, { method, url }, { handleUnauthorized: options.handleUnauthorized });
+      return interceptHttpResponse(
+        response,
+        { method, url },
+        { handleUnauthorized: options.handleUnauthorized },
+      );
     } catch (error) {
       const networkError = new NetworkError("Network error while calling API.", {
         context: {
@@ -365,7 +387,9 @@ export function registerApiSource(source: ApiSourceName, config: ApiSourceConfig
 export function getApiSourceClient(source: ApiSourceName) {
   const client = sourceClients.get(source);
   if (!client) {
-    throw new Error(`API source '${source}' is not registered. Register it with registerApiSource().`);
+    throw new Error(
+      `API source '${source}' is not registered. Register it with registerApiSource().`,
+    );
   }
 
   return client;
@@ -383,7 +407,8 @@ export const BACKEND_API_SOURCE = "backend";
 export const EXTERNAL_API_SOURCE = "external";
 
 registerApiSource(BACKEND_API_SOURCE, {
-  baseUrl: RAW_BACKEND_API_BASE_URL && RAW_BACKEND_API_BASE_URL.length > 0 ? RAW_BACKEND_API_BASE_URL : "",
+  baseUrl:
+    RAW_BACKEND_API_BASE_URL && RAW_BACKEND_API_BASE_URL.length > 0 ? RAW_BACKEND_API_BASE_URL : "",
   credentials: "include",
   handleUnauthorized: true,
   refreshOnUnauthorizedPath: "/api/auth/refresh",
@@ -391,7 +416,10 @@ registerApiSource(BACKEND_API_SOURCE, {
 });
 
 registerApiSource(EXTERNAL_API_SOURCE, {
-  baseUrl: RAW_EXTERNAL_API_BASE_URL && RAW_EXTERNAL_API_BASE_URL.length > 0 ? RAW_EXTERNAL_API_BASE_URL : "",
+  baseUrl:
+    RAW_EXTERNAL_API_BASE_URL && RAW_EXTERNAL_API_BASE_URL.length > 0
+      ? RAW_EXTERNAL_API_BASE_URL
+      : "",
   credentials: "omit",
   handleUnauthorized: false,
   scope: "external-api-client",
@@ -472,11 +500,19 @@ class DefaultHttpClientFacade implements HttpClientFacade {
     return getApiSourceClient(BACKEND_API_SOURCE).authJson<T>(input, init);
   }
 
-  jsonWithSchema<TSchema extends ZodTypeAny>(input: string, schema: TSchema, init: RequestInit = {}) {
+  jsonWithSchema<TSchema extends ZodTypeAny>(
+    input: string,
+    schema: TSchema,
+    init: RequestInit = {},
+  ) {
     return getApiSourceClient(BACKEND_API_SOURCE).jsonWithSchema(input, schema, init);
   }
 
-  authJsonWithSchema<TSchema extends ZodTypeAny>(input: string, schema: TSchema, init: RequestInit = {}) {
+  authJsonWithSchema<TSchema extends ZodTypeAny>(
+    input: string,
+    schema: TSchema,
+    init: RequestInit = {},
+  ) {
     return getApiSourceClient(BACKEND_API_SOURCE).authJsonWithSchema(input, schema, init);
   }
 
@@ -488,7 +524,11 @@ class DefaultHttpClientFacade implements HttpClientFacade {
     return getApiSourceClient(EXTERNAL_API_SOURCE).json<T>(input, init);
   }
 
-  externalJsonWithSchema<TSchema extends ZodTypeAny>(input: string, schema: TSchema, init: RequestInit = {}) {
+  externalJsonWithSchema<TSchema extends ZodTypeAny>(
+    input: string,
+    schema: TSchema,
+    init: RequestInit = {},
+  ) {
     return getApiSourceClient(EXTERNAL_API_SOURCE).jsonWithSchema(input, schema, init);
   }
 }
@@ -496,7 +536,8 @@ class DefaultHttpClientFacade implements HttpClientFacade {
 export const httpClientFacade = DefaultHttpClientFacade.getInstance();
 
 export const apiProxy = {
-  registerSource: (source: ApiSourceName, config: ApiSourceConfig) => httpClientFacade.registerSource(source, config),
+  registerSource: (source: ApiSourceName, config: ApiSourceConfig) =>
+    httpClientFacade.registerSource(source, config),
   source: (source: ApiSourceName) => httpClientFacade.source(source),
 };
 
@@ -558,7 +599,11 @@ export function authJson<T>(input: string, init: RequestInit = {}) {
   return httpClientFacade.authJson<T>(input, init);
 }
 
-export function apiJsonWithSchema<TSchema extends ZodTypeAny>(input: string, schema: TSchema, init: RequestInit = {}) {
+export function apiJsonWithSchema<TSchema extends ZodTypeAny>(
+  input: string,
+  schema: TSchema,
+  init: RequestInit = {},
+) {
   return httpClientFacade.jsonWithSchema(input, schema, init);
 }
 

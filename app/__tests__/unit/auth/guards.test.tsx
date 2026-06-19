@@ -32,11 +32,11 @@ describe("auth guards", () => {
         <Routes>
           <Route
             path="/protected"
-            element={(
+            element={
               <AuthGuard>
                 <div>Protected content</div>
               </AuthGuard>
-            )}
+            }
           />
           <Route path="/login" element={<div>Login page</div>} />
         </Routes>
@@ -56,11 +56,11 @@ describe("auth guards", () => {
         <Routes>
           <Route
             path="/protected"
-            element={(
+            element={
               <AuthGuard>
                 <div>Protected content</div>
               </AuthGuard>
-            )}
+            }
           />
           <Route path="/login" element={<div>Login page</div>} />
         </Routes>
@@ -80,11 +80,11 @@ describe("auth guards", () => {
         <Routes>
           <Route
             path="/login"
-            element={(
+            element={
               <GuestGuard>
                 <div>Login form</div>
               </GuestGuard>
-            )}
+            }
           />
           <Route path="/home" element={<div>Home page</div>} />
         </Routes>

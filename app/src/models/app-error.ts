@@ -16,13 +16,16 @@ export class AppError extends Error {
   readonly status?: number;
   readonly context?: ErrorContext;
 
-  constructor(message: string, options: {
-    source: ErrorSource;
-    code?: string;
-    status?: number;
-    context?: ErrorContext;
-    cause?: unknown;
-  }) {
+  constructor(
+    message: string,
+    options: {
+      source: ErrorSource;
+      code?: string;
+      status?: number;
+      context?: ErrorContext;
+      cause?: unknown;
+    },
+  ) {
     super(message);
     this.name = "AppError";
     this.source = options.source;
@@ -36,7 +39,10 @@ export class AppError extends Error {
 }
 
 export class ApiError extends AppError {
-  constructor(message: string, options: { status: number; code?: string; context?: ErrorContext; cause?: unknown }) {
+  constructor(
+    message: string,
+    options: { status: number; code?: string; context?: ErrorContext; cause?: unknown },
+  ) {
     super(message, {
       source: "api",
       status: options.status,
@@ -49,7 +55,10 @@ export class ApiError extends AppError {
 }
 
 export class NetworkError extends AppError {
-  constructor(message: string, options?: { code?: string; context?: ErrorContext; cause?: unknown }) {
+  constructor(
+    message: string,
+    options?: { code?: string; context?: ErrorContext; cause?: unknown },
+  ) {
     super(message, {
       source: "network",
       code: options?.code,
@@ -79,4 +88,3 @@ export function normalizeError(error: unknown, context?: ErrorContext): AppError
     cause: error,
   });
 }
-

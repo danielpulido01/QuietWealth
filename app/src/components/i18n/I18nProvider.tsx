@@ -1,11 +1,4 @@
-﻿import {
-  createContext,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
+﻿import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   DEFAULT_LANGUAGE,
   LANGUAGE_LOCALES,
@@ -83,16 +76,19 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     document.documentElement.lang = nextLanguage;
   };
 
-  const value = useMemo<I18nContextValue>(() => ({
-    language,
-    locale: LANGUAGE_LOCALES[language],
-    supportedLanguages: SUPPORTED_LANGUAGES,
-    setLanguage,
-    t: (key, values) => {
-      const translation = getTranslation(language, key);
-      return typeof translation === "string" ? interpolate(translation, values) : key;
-    },
-  }), [language]);
+  const value = useMemo<I18nContextValue>(
+    () => ({
+      language,
+      locale: LANGUAGE_LOCALES[language],
+      supportedLanguages: SUPPORTED_LANGUAGES,
+      setLanguage,
+      t: (key, values) => {
+        const translation = getTranslation(language, key);
+        return typeof translation === "string" ? interpolate(translation, values) : key;
+      },
+    }),
+    [language],
+  );
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
@@ -106,4 +102,3 @@ export function useTranslation() {
 
   return context;
 }
-

@@ -1,0 +1,12 @@
+{
+  "name": "quietwealth-tooling",
+  "private": true,
+  "scripts": {
+    "prepare": "husky",
+    "lint": "npm --prefix app run lint",
+    "format:check": "npm --prefix app run format:check"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7"
+  }
+}

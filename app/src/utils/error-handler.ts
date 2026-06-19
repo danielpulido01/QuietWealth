@@ -2,11 +2,7 @@
 import { logger } from "./logger";
 import { type AppError, type ErrorContext, normalizeError } from "../models/app-error";
 
-export type ErrorMiddleware = (
-  error: AppError,
-  context: ErrorContext,
-  next: () => void,
-) => void;
+export type ErrorMiddleware = (error: AppError, context: ErrorContext, next: () => void) => void;
 
 class ErrorHandler {
   private static instance: ErrorHandler | null = null;
@@ -94,4 +90,3 @@ export function installGlobalErrorHandlers() {
 
   globalHandlersInstalled = true;
 }
-

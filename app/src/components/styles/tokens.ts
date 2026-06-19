@@ -73,9 +73,8 @@ export const radius = {
 } as const;
 
 export const typography = {
-  fontFamily: "\"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif",
-  monoFamily: "\"SFMono-Regular\", Consolas, \"Liberation Mono\", Menlo, monospace",
+  fontFamily: '"Segoe UI", "Helvetica Neue", Arial, sans-serif',
+  monoFamily: '"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace',
   headingWeight: "600",
   bodyWeight: "400",
 } as const;
-

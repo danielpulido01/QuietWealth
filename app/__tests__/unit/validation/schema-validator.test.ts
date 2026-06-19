@@ -24,10 +24,14 @@ describe("parseWithSchema", () => {
     });
 
     try {
-      parseWithSchema(schema, { id: 12, amount: "oops" }, {
-        schemaName: "document",
-        context: { scope: "unit-test" },
-      });
+      parseWithSchema(
+        schema,
+        { id: 12, amount: "oops" },
+        {
+          schemaName: "document",
+          context: { scope: "unit-test" },
+        },
+      );
       throw new Error("Expected parseWithSchema to throw.");
     } catch (error) {
       expect(error).toEqual(

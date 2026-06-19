@@ -20,7 +20,10 @@ const initialState: SessionStoreState = {
   session: null,
 };
 
-function sessionReducer(state: SessionStoreState = initialState, action: SessionStoreAction): SessionStoreState {
+function sessionReducer(
+  state: SessionStoreState = initialState,
+  action: SessionStoreAction,
+): SessionStoreState {
   switch (action.type) {
     case "session/set":
       return {

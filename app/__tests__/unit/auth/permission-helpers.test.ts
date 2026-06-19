@@ -1,5 +1,9 @@
 import { accessPolicy } from "../../../src/auth/policies/accessPolicy";
-import { isPermissionCode, permissionCodes, Permissions } from "../../../src/auth/policies/permissions";
+import {
+  isPermissionCode,
+  permissionCodes,
+  Permissions,
+} from "../../../src/auth/policies/permissions";
 import { isRoleCode, roleCodes, Roles } from "../../../src/auth/policies/roles";
 
 describe("permission and role helpers", () => {

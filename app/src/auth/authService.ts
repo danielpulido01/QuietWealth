@@ -132,7 +132,11 @@ export class AuthService {
     }
   }
 
-  async resetPassword(accessToken: string, refreshToken: string, newPassword: string): Promise<void> {
+  async resetPassword(
+    accessToken: string,
+    refreshToken: string,
+    newPassword: string,
+  ): Promise<void> {
     const payload = parseWithSchema(
       resetPasswordRequestSchema,
       {

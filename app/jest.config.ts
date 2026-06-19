@@ -30,10 +30,7 @@ const config: Config = {
       statements: 80,
     },
   },
-  testMatch: [
-    "<rootDir>/__tests__/unit/**/*.test.ts",
-    "<rootDir>/__tests__/unit/**/*.test.tsx",
-  ],
+  testMatch: ["<rootDir>/__tests__/unit/**/*.test.ts", "<rootDir>/__tests__/unit/**/*.test.tsx"],
 };
 
 export default config;

@@ -41,11 +41,11 @@ export const authUserSchema = z
     email: value.email,
     userId: value.userId ?? value.appUserId ?? value.id ?? value.sub,
     displayName:
-      value.displayName
-      ?? value.fullName
-      ?? value.name
-      ?? value.givenName
-      ?? deriveDisplayNameFromEmail(value.email),
+      value.displayName ??
+      value.fullName ??
+      value.name ??
+      value.givenName ??
+      deriveDisplayNameFromEmail(value.email),
     isGlobalAdmin: value.isGlobalAdmin,
     tenantIds: value.tenantIds,
     tenantRoles: value.tenantRoles,
@@ -66,4 +66,3 @@ export const resetPasswordRequestSchema = z.object({
   refreshToken: nonEmptyStringSchema,
   newPassword: nonEmptyStringSchema,
 });
-

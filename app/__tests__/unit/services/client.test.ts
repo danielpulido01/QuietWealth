@@ -100,9 +100,14 @@ describe("client", () => {
   });
 
   it("refreshes an authenticated request once after a 401", async () => {
-    const requestSpy = jest.spyOn(axios, "request")
-      .mockResolvedValueOnce(createAxiosResponse({ status: 401, statusText: "Unauthorized", data: new ArrayBuffer(0) }))
-      .mockResolvedValueOnce(createAxiosResponse({ status: 204, statusText: "No Content", data: new ArrayBuffer(0) }))
+    const requestSpy = jest
+      .spyOn(axios, "request")
+      .mockResolvedValueOnce(
+        createAxiosResponse({ status: 401, statusText: "Unauthorized", data: new ArrayBuffer(0) }),
+      )
+      .mockResolvedValueOnce(
+        createAxiosResponse({ status: 204, statusText: "No Content", data: new ArrayBuffer(0) }),
+      )
       .mockResolvedValueOnce(
         createAxiosResponse({
           status: 200,
@@ -176,7 +181,10 @@ describe("client", () => {
     );
 
     expect(errorSpy).toHaveBeenCalled();
-    expect(logSpy).toHaveBeenCalledWith("API error response", expect.objectContaining({ status: 500 }));
+    expect(logSpy).toHaveBeenCalledWith(
+      "API error response",
+      expect.objectContaining({ status: 500 }),
+    );
   });
 
   it("raises NetworkError for transport failures", async () => {
@@ -197,7 +205,10 @@ describe("client", () => {
     );
 
     expect(errorSpy).toHaveBeenCalled();
-    expect(logSpy).toHaveBeenCalledWith("API network error", expect.objectContaining({ source: "network-source" }));
+    expect(logSpy).toHaveBeenCalledWith(
+      "API network error",
+      expect.objectContaining({ source: "network-source" }),
+    );
   });
 
   it("covers the exported helper wrappers", async () => {
@@ -229,12 +240,18 @@ describe("client", () => {
     expect(apiProxy.source("wrapper-source")).toBe(sourceClient);
     await expect(apiFetch("/health")).resolves.toBeInstanceOf(Response);
     await expect(apiJson("/health")).resolves.toEqual({ id: "doc-1" });
-    await expect(apiJsonWithSchema("/health", z.object({ id: z.string() }))).resolves.toEqual({ id: "doc-1" });
+    await expect(apiJsonWithSchema("/health", z.object({ id: z.string() }))).resolves.toEqual({
+      id: "doc-1",
+    });
     await expect(authJson("/health")).resolves.toEqual({ id: "doc-1" });
-    await expect(authJsonWithSchema("/health", z.object({ id: z.string() }))).resolves.toEqual({ id: "doc-1" });
+    await expect(authJsonWithSchema("/health", z.object({ id: z.string() }))).resolves.toEqual({
+      id: "doc-1",
+    });
     await expect(externalFetch("/feed")).resolves.toBeInstanceOf(Response);
     await expect(externalJson("/feed")).resolves.toEqual({ id: "external-1" });
-    await expect(externalJsonWithSchema("/feed", z.object({ id: z.string() }))).resolves.toEqual({ id: "external-1" });
+    await expect(externalJsonWithSchema("/feed", z.object({ id: z.string() }))).resolves.toEqual({
+      id: "external-1",
+    });
     await expect(sourceFetch("wrapper-source", "/health")).resolves.toBeInstanceOf(Response);
     await expect(sourceAuthFetch("wrapper-source", "/health")).resolves.toBeInstanceOf(Response);
     await expect(sourceJson("wrapper-source", "/health")).resolves.toEqual({ id: "doc-1" });

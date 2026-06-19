@@ -15,7 +15,6 @@ export const Permissions = {
 
   etc
   */
-  
 } as const;
 
 export type PermissionCode = (typeof Permissions)[keyof typeof Permissions];

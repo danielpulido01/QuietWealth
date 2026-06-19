@@ -28,16 +28,22 @@ describe("validation schemas", () => {
   });
 
   it("accepts valid auth payloads and rejects invalid ones", () => {
-    expect(loginRequestSchema.safeParse({ email: "user@example.com", password: "secret" }).success).toBe(true);
-    expect(forgotPasswordRequestSchema.safeParse({
-      email: "user@example.com",
-      redirectTo: "https://quietwealth.example/reset",
-    }).success).toBe(true);
-    expect(resetPasswordRequestSchema.safeParse({
-      accessToken: "access",
-      refreshToken: "refresh",
-      newPassword: "new-password",
-    }).success).toBe(true);
+    expect(
+      loginRequestSchema.safeParse({ email: "user@example.com", password: "secret" }).success,
+    ).toBe(true);
+    expect(
+      forgotPasswordRequestSchema.safeParse({
+        email: "user@example.com",
+        redirectTo: "https://quietwealth.example/reset",
+      }).success,
+    ).toBe(true);
+    expect(
+      resetPasswordRequestSchema.safeParse({
+        accessToken: "access",
+        refreshToken: "refresh",
+        newPassword: "new-password",
+      }).success,
+    ).toBe(true);
 
     const invalidLogin = loginRequestSchema.safeParse({ email: "bad-email", password: "" });
     expect(invalidLogin.success).toBe(false);

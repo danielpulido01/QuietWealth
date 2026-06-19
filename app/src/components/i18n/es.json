@@ -1,11 +1,6 @@
 {
-  /*
-  Implement translations as needed in Spanish, for example:
-  "home.title": "Inicio",
-  "home.welcome": "¡Bienvenido a QuietWealth!", 
-  */
   "login.title": "Login",
   "login.username": "Nombre de usuario",
-  "login.password": "Contraseña",
+  "login.password": "Contrase\u00f1a",
   "login.token": "Token de un solo uso"
 }

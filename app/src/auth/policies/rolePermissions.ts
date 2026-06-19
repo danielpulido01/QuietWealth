@@ -1,6 +1,3 @@
-import { Permissions } from "./permissions";
-import { Roles } from "./roles";
-
 export const rolePermissions = {
   /*
   Implement role permissions as needed, for example:

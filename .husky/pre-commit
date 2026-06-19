@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+
+if command -v npm.cmd >/dev/null 2>&1; then
+  NPM_BIN="npm.cmd"
+else
+  NPM_BIN="npm"
+fi
+
+"$NPM_BIN" --prefix app run lint
+"$NPM_BIN" --prefix app run format:check

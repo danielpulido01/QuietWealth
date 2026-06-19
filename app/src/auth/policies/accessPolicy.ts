@@ -1,4 +1,4 @@
-import { Permissions, type PermissionCode } from "./permissions";
+import type { PermissionCode } from "./permissions";
 
 export const accessPolicy = {
   /*

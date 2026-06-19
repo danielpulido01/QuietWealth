@@ -8,3 +8,6 @@
 /server/tests/QuietWealth.Backend.ApiTests/obj
 /app/node_modules
 /app/coverage
+/app/dist
+/node_modules
+/.husky/_

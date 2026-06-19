@@ -20,11 +20,12 @@ export function PolicyGuard({
 }: PolicyGuardProps) {
   const { hasAllPermissions, hasAnyPermission } = usePermissions();
 
-  const hasAccess = required.length === 0
-    ? true
-    : mode === "all"
-      ? hasAllPermissions(required)
-      : hasAnyPermission(required);
+  const hasAccess =
+    required.length === 0
+      ? true
+      : mode === "all"
+        ? hasAllPermissions(required)
+        : hasAnyPermission(required);
 
   if (!hasAccess) {
     if (fallback) {

@@ -1,5 +1,5 @@
 import { jest } from "@jest/globals";
-import { authService, AuthServiceError, NoTenantAccessError } from "../../../src/auth/authService";
+import { authService, AuthServiceError } from "../../../src/auth/authService";
 import { httpClientFacade } from "../../../src/services/client";
 import { sessionManager } from "../../../src/state/sessionManager";
 
@@ -37,7 +37,9 @@ describe("authService", () => {
         },
       ),
     );
-    const setSessionSpy = jest.spyOn(sessionManager, "setSession").mockReturnValue(normalizedSession);
+    const setSessionSpy = jest
+      .spyOn(sessionManager, "setSession")
+      .mockReturnValue(normalizedSession);
 
     const result = await authService.login({
       email: " user@example.com ",
@@ -60,7 +62,9 @@ describe("authService", () => {
   });
 
   it("clears the session and returns null when /me responds with 401", async () => {
-    jest.spyOn(httpClientFacade, "authFetch").mockResolvedValue(new Response(null, { status: 401 }));
+    jest
+      .spyOn(httpClientFacade, "authFetch")
+      .mockResolvedValue(new Response(null, { status: 401 }));
     const clearSpy = jest.spyOn(sessionManager, "clearSession").mockImplementation(() => undefined);
 
     await expect(authService.getCurrentSession()).resolves.toBeNull();

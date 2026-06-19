@@ -37,4 +37,3 @@ export async function setLanguage(lang: string) {
   await i18n.changeLanguage(safe);
   localStorage.setItem(STORAGE_KEY, safe);
 }
-

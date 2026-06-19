@@ -1,10 +1,4 @@
 {
-  /*
-  Implement translations as needed in English, for example:
-  "home.title": "Home",
-  "home.welcome": "Welcome to QuietWealth!",
-  etc
-  */
   "login.title": "Login",
   "login.username": "Username",
   "login.password": "Password",

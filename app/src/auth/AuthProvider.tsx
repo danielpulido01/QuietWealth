@@ -229,7 +229,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       logout,
       refresh,
     }),
-    [user, isLoading, noTenantAccess, login, requestPasswordReset, resetPassword, logout, refresh],
+    [
+      user,
+      isLoading,
+      noTenantAccess,
+      login,
+      loginWithMicrosoft,
+      requestPasswordReset,
+      resetPassword,
+      logout,
+      refresh,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

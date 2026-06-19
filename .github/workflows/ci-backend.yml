@@ -1,0 +1,133 @@
+name: CI Backend
+
+on:
+  pull_request:
+    branches:
+      - main
+      - staging
+    paths:
+      - "server/**"
+      - ".github/workflows/ci-backend.yml"
+      - ".github/workflows/main_prodquietwealth-api.yml"
+      - ".github/workflows/staging_qaquietwealth-api.yml"
+  push:
+    branches:
+      - main
+      - staging
+    paths:
+      - "server/**"
+      - ".github/workflows/ci-backend.yml"
+      - ".github/workflows/main_prodquietwealth-api.yml"
+      - ".github/workflows/staging_qaquietwealth-api.yml"
+
+concurrency:
+  group: ci-backend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.x"
+
+      - name: Restore backend projects
+        run: |
+          projects=(
+            "server/QuietWealth.Backend/QuietWealth.Backend.csproj"
+            "server/tests/QuietWealth.Backend.UnitTests/QuietWealth.Backend.UnitTests.csproj"
+            "server/tests/QuietWealth.Backend.IntegrationTests/QuietWealth.Backend.IntegrationTests.csproj"
+            "server/tests/QuietWealth.Backend.ApiTests/QuietWealth.Backend.ApiTests.csproj"
+            "server/tests/QuietWealth.Backend.ContractTests/QuietWealth.Backend.ContractTests.csproj"
+          )
+
+          for project in "${projects[@]}"; do
+            dotnet restore "$project"
+          done
+
+      - name: Verify formatting
+        run: |
+          projects=(
+            "server/QuietWealth.Backend/QuietWealth.Backend.csproj"
+            "server/tests/QuietWealth.Backend.UnitTests/QuietWealth.Backend.UnitTests.csproj"
+            "server/tests/QuietWealth.Backend.IntegrationTests/QuietWealth.Backend.IntegrationTests.csproj"
+            "server/tests/QuietWealth.Backend.ApiTests/QuietWealth.Backend.ApiTests.csproj"
+            "server/tests/QuietWealth.Backend.ContractTests/QuietWealth.Backend.ContractTests.csproj"
+          )
+
+          for project in "${projects[@]}"; do
+            dotnet format "$project" --verify-no-changes --no-restore
+          done
+
+  build:
+    needs: format
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.x"
+
+      - name: Restore backend project
+        run: dotnet restore server/QuietWealth.Backend/QuietWealth.Backend.csproj
+
+      - name: Build backend
+        run: dotnet build server/QuietWealth.Backend/QuietWealth.Backend.csproj --configuration Release --no-restore
+
+  test:
+    needs: format
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: unit
+            project: server/tests/QuietWealth.Backend.UnitTests/QuietWealth.Backend.UnitTests.csproj
+          - name: integration
+            project: server/tests/QuietWealth.Backend.IntegrationTests/QuietWealth.Backend.IntegrationTests.csproj
+          - name: api
+            project: server/tests/QuietWealth.Backend.ApiTests/QuietWealth.Backend.ApiTests.csproj
+          - name: contract
+            project: server/tests/QuietWealth.Backend.ContractTests/QuietWealth.Backend.ContractTests.csproj
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.x"
+
+      - name: Restore test project
+        run: dotnet restore ${{ matrix.project }}
+
+      - name: Run ${{ matrix.name }} tests
+        run: >
+          dotnet test ${{ matrix.project }}
+          --configuration Release
+          --no-restore
+          --logger "trx;LogFileName=${{ matrix.name }}.trx"
+          --results-directory "artifacts/test-results/${{ matrix.name }}"
+          --collect:"XPlat Code Coverage"
+
+      - name: Upload ${{ matrix.name }} test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-${{ matrix.name }}-results
+          path: artifacts/test-results/${{ matrix.name }}
+          if-no-files-found: warn

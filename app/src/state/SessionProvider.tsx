@@ -1,11 +1,4 @@
-import {
-  createContext,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
+import { createContext, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { AuthServiceError, NoTenantAccessError, authService } from "../auth/authService";
 import type { AuthSession, AuthUser } from "./session.types";
 import type { PermissionCode } from "../auth/policies/permissions";

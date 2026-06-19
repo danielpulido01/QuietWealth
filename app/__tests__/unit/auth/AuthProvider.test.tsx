@@ -4,11 +4,16 @@ import { act, render, waitFor } from "@testing-library/react";
 const apiFetchMock = jest.fn();
 const authFetchMock = jest.fn();
 const buildApiUrlMock = jest.fn();
+const httpClientFacadeMock = {
+  fetch: apiFetchMock,
+  authFetch: authFetchMock,
+};
 
 jest.unstable_mockModule("../../../src/services/client", () => ({
   apiFetch: apiFetchMock,
   authFetch: authFetchMock,
   buildApiUrl: buildApiUrlMock,
+  httpClientFacade: httpClientFacadeMock,
 }));
 
 const { AuthProvider, useAuth } = await import("../../../src/auth/AuthProvider");
@@ -63,10 +68,12 @@ describe("AuthProvider", () => {
   }
 
   it("bootstraps the authenticated user from /api/auth/me", async () => {
-    authFetchMock.mockResolvedValue(createAuthMeResponse({
-      tenantIds: ["tenant-1"],
-      tenantRoles: ["operator"],
-    }));
+    authFetchMock.mockResolvedValue(
+      createAuthMeResponse({
+        tenantIds: ["tenant-1"],
+        tenantRoles: ["operator"],
+      }),
+    );
 
     renderProvider();
 
@@ -124,7 +131,9 @@ describe("AuthProvider", () => {
 
     expect(latestAuthContext?.isAuthenticated).toBe(false);
     expect(latestAuthContext?.user).toBeNull();
-    expect(warnSpy).toHaveBeenCalledWith("Authenticated response did not contain userId. Logging out.");
+    expect(warnSpy).toHaveBeenCalledWith(
+      "Authenticated response did not contain userId. Logging out.",
+    );
   });
 
   it("posts credentials and reloads the authenticated user on login", async () => {
@@ -222,7 +231,9 @@ describe("AuthProvider", () => {
       expect(latestAuthContext?.isLoading).toBe(false);
     });
 
-    await expect(latestAuthContext?.login("user@example.com", "secret")).rejects.toThrow("Bad credentials.");
+    await expect(latestAuthContext?.login("user@example.com", "secret")).rejects.toThrow(
+      "Bad credentials.",
+    );
     expect(latestAuthContext?.isLoading).toBe(false);
   });
 

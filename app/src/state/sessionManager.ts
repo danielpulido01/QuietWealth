@@ -100,14 +100,14 @@ class SessionManager {
     const userPayload = isRecord(backendPayload.user) ? backendPayload.user : null;
 
     const userId =
-      asString(userPayload?.id)
-      ?? asString(userPayload?.userId)
-      ?? asString(userPayload?.appUserId)
-      ?? asString(userPayload?.sub)
-      ?? asString(backendPayload.userId)
-      ?? asString(backendPayload.appUserId)
-      ?? asString(backendPayload.id)
-      ?? asString(backendPayload.sub);
+      asString(userPayload?.id) ??
+      asString(userPayload?.userId) ??
+      asString(userPayload?.appUserId) ??
+      asString(userPayload?.sub) ??
+      asString(backendPayload.userId) ??
+      asString(backendPayload.appUserId) ??
+      asString(backendPayload.id) ??
+      asString(backendPayload.sub);
     if (!userId) {
       return null;
     }
@@ -115,7 +115,9 @@ class SessionManager {
     const email = asNullableString(userPayload?.email ?? backendPayload.email);
     const isGlobalAdmin = asBoolean(userPayload?.isGlobalAdmin ?? backendPayload.isGlobalAdmin);
 
-    const tenantRoleCandidates = asStringArray(userPayload?.tenantRoles ?? backendPayload.tenantRoles);
+    const tenantRoleCandidates = asStringArray(
+      userPayload?.tenantRoles ?? backendPayload.tenantRoles,
+    );
     const explicitRoleCandidates = asStringArray(userPayload?.roles ?? backendPayload.roles);
 
     const roles = new Set<RoleCode>();
@@ -134,7 +136,9 @@ class SessionManager {
     }
 
     const permissions = new Set<PermissionCode>();
-    const explicitPermissions = asStringArray(userPayload?.permissions ?? backendPayload.permissions);
+    const explicitPermissions = asStringArray(
+      userPayload?.permissions ?? backendPayload.permissions,
+    );
     for (const permission of explicitPermissions) {
       if (isPermissionCode(permission)) {
         permissions.add(permission);

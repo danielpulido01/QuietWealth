@@ -1,15 +1,25 @@
-name: Build and deploy Production Frontend to Azure Web App - prodquietwealth-frontend
+name: Deploy Production Frontend to Azure Web App - prodquietwealth-frontend
 
 on:
-  push:
+  workflow_run:
+    workflows:
+      - CI Frontend
+    types:
+      - completed
     branches:
       - main
-    paths:
-      - 'app/**'
   workflow_dispatch:
+
+concurrency:
+  group: deploy-prod-frontend
+  cancel-in-progress: false
 
 jobs:
   build:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     environment: Production
     permissions:
@@ -17,21 +27,22 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.event.workflow_run.head_sha }}
 
       - name: Set up Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '24.x'
+          node-version: "24.x"
+          cache: npm
+          cache-dependency-path: app/package-lock.json
 
-      - name: Install, test, and build
+      - name: Install and build
         working-directory: app
         env:
-          # Separate secret pointing to the prod API URL.
-          # Add VITE_API_BASE_URL_PROD to GitHub → Settings → Environments → Production → Secrets.
           VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL_PROD }}
         run: |
           npm ci
-          npm run test:ci
           npm run build
 
       - name: Upload artifact for deployment job
@@ -41,6 +52,10 @@ jobs:
           path: app/dist
 
   deploy:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     needs: build
     environment: Production
@@ -57,8 +72,6 @@ jobs:
       - name: Login to Azure
         uses: azure/login@v2
         with:
-          # Add these secrets after provisioning the prod Azure Web App and
-          # configuring its federated identity credential in Entra ID.
           client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_PROD_FRONTEND }}
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_PROD }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_PROD }}
@@ -67,7 +80,7 @@ jobs:
         id: deploy-to-webapp
         uses: azure/webapps-deploy@v3
         with:
-          app-name: 'prodquietwealth-frontend'
-          slot-name: 'Production'
+          app-name: "prodquietwealth-frontend"
+          slot-name: "Production"
           package: .
-          startup-command: 'npx --yes serve -s . -l $PORT'
+          startup-command: "npx --yes serve -s . -l $PORT"

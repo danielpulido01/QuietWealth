@@ -18,13 +18,17 @@ describe("unauthorized handling strategies", () => {
   it("ignores bootstrap auth endpoints for the cookie strategy", () => {
     const strategy = new HttpOnlyCookieUnauthorizedHandlingStrategy();
 
-    expect(strategy.shouldHandle({ request: { method: "POST", url: "/api/auth/login" } })).toBe(false);
+    expect(strategy.shouldHandle({ request: { method: "POST", url: "/api/auth/login" } })).toBe(
+      false,
+    );
     expect(strategy.shouldHandle({ request: { method: "GET", url: "/api/files" } })).toBe(true);
   });
 
   it("clears the session for protected requests", () => {
     const warnSpy = jest.spyOn(logger, "warn").mockImplementation(() => undefined);
-    const handleSpy = jest.spyOn(sessionManager, "handleUnauthorized").mockImplementation(() => undefined);
+    const handleSpy = jest
+      .spyOn(sessionManager, "handleUnauthorized")
+      .mockImplementation(() => undefined);
     const strategy = new HttpOnlyCookieUnauthorizedHandlingStrategy();
 
     strategy.handle({ request: { method: "GET", url: "/api/files" } });

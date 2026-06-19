@@ -18,12 +18,12 @@ npm run test:e2e
 
 ## Current Unit Test Layout
 
-| Folder | Real examples in this repo |
-|---|---|
-| `__tests__/unit/auth/` | `AuthProvider.test.tsx`, `authService.test.ts`, `guards.test.tsx`, `permission-helpers.test.ts` |
-| `__tests__/unit/services/` | `client.test.ts`, `httpInterceptors.test.ts`, `applicationFacade.test.ts`, `unauthorizedHandlingStrategy.test.ts` |
-| `__tests__/unit/validation/` | `auth-schemas.test.ts`, `schema-validator.test.ts` |
-| `__tests__/unit/polling/` | `PollingOrchestrator.test.ts` currently contains a skipped placeholder |
+| Folder                       | Real examples in this repo                                                                                        |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `__tests__/unit/auth/`       | `AuthProvider.test.tsx`, `authService.test.ts`, `guards.test.tsx`, `permission-helpers.test.ts`                   |
+| `__tests__/unit/services/`   | `client.test.ts`, `httpInterceptors.test.ts`, `applicationFacade.test.ts`, `unauthorizedHandlingStrategy.test.ts` |
+| `__tests__/unit/validation/` | `auth-schemas.test.ts`, `schema-validator.test.ts`                                                                |
+| `__tests__/unit/polling/`    | `PollingOrchestrator.test.ts` currently contains a skipped placeholder                                            |
 
 `jest.config.ts` currently enforces 80% statement coverage for:
 
@@ -38,9 +38,11 @@ npm run test:e2e
 Use this pattern when the component depends on router state and custom hooks.
 
 Real file:
+
 - `__tests__/unit/auth/guards.test.tsx`
 
 What it does:
+
 - mocks `useSession` and `usePermissions`
 - imports the guard after the mocks are registered
 - renders inside `MemoryRouter`
@@ -69,11 +71,11 @@ it("redirects unauthenticated users to login", () => {
       <Routes>
         <Route
           path="/protected"
-          element={(
+          element={
             <AuthGuard>
               <div>Protected content</div>
             </AuthGuard>
-          )}
+          }
         />
         <Route path="/login" element={<div>Login page</div>} />
       </Routes>
@@ -85,6 +87,7 @@ it("redirects unauthenticated users to login", () => {
 ```
 
 Use this for:
+
 - guards
 - providers that depend on hooks
 - route-aware UI
@@ -94,9 +97,11 @@ Use this for:
 Use this pattern when testing service logic with mocked HTTP boundaries.
 
 Real file:
+
 - `__tests__/unit/auth/authService.test.ts`
 
 What it does:
+
 - spies on `httpClientFacade.fetch` and `httpClientFacade.authFetch`
 - verifies request payload normalization
 - verifies session updates and error handling
@@ -125,14 +130,17 @@ it("logs in with a validated payload and returns the normalized session", async 
 
   jest.spyOn(httpClientFacade, "fetch").mockResolvedValue(new Response(null, { status: 204 }));
   jest.spyOn(httpClientFacade, "authFetch").mockResolvedValue(
-    new Response(JSON.stringify({
-      userId: "user-1",
-      email: "user@example.com",
-      isAuthenticated: true,
-    }), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    }),
+    new Response(
+      JSON.stringify({
+        userId: "user-1",
+        email: "user@example.com",
+        isAuthenticated: true,
+      }),
+      {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      },
+    ),
   );
   const setSessionSpy = jest.spyOn(sessionManager, "setSession").mockReturnValue(normalizedSession);
 
@@ -154,6 +162,7 @@ it("logs in with a validated payload and returns the normalized session", async 
 ```
 
 Add a failure-path test beside the happy path:
+
 - invalid API response
 - `401` or `403`
 - network failure
@@ -164,9 +173,11 @@ Add a failure-path test beside the happy path:
 Use this pattern when testing wrappers around `fetch`, `axios`, or request interceptors.
 
 Real file:
+
 - `__tests__/unit/services/client.test.ts`
 
 What it does:
+
 - spies on `axios.request`
 - verifies URL normalization and body forwarding
 - verifies retry and error translation behavior
@@ -210,6 +221,7 @@ it("translates fetch requests through axios and returns a Response", async () =>
 ```
 
 This is the right level for:
+
 - `HttpClientFacade`
 - interceptors
 - retry behavior
@@ -220,9 +232,11 @@ This is the right level for:
 Use this pattern when the target is a schema or parser.
 
 Real file:
+
 - `__tests__/unit/validation/auth-schemas.test.ts`
 
 What it does:
+
 - verifies valid payloads succeed
 - verifies invalid payloads fail
 - verifies the returned error shape
@@ -256,6 +270,7 @@ it("accepts valid auth payloads and rejects invalid ones", () => {
 ```
 
 For schemas, always cover:
+
 - a valid payload
 - one invalid payload per major rule
 - the exact error shape consumed by the UI or service layer
@@ -297,6 +312,7 @@ describe("Button", () => {
 ```
 
 Prefer:
+
 - `getByRole` over brittle CSS selectors
 - `userEvent` over manual DOM event dispatch
 - visible behavior over implementation details
@@ -315,6 +331,7 @@ Before writing a flow:
 ### Login Flow
 
 File:
+
 - `__tests__/e2e/login.spec.ts`
 
 Example:
@@ -353,6 +370,7 @@ test("authenticates a user and lands on the home route", async ({ page }) => {
 ### Marketplace Flow
 
 File:
+
 - `__tests__/e2e/marketplace.spec.ts`
 
 Example:
@@ -385,6 +403,7 @@ test("loads marketplace data and shows the results grid", async ({ page }) => {
 ### Document Upload Flow
 
 File:
+
 - `__tests__/e2e/document-upload.spec.ts`
 
 Example:
@@ -403,9 +422,9 @@ test("uploads a document and shows progress feedback", async ({ page }) => {
   });
 
   await page.goto("/documents/upload");
-  await page.getByTestId("document-file-input").setInputFiles(
-    path.resolve("fixtures", "sample.pdf"),
-  );
+  await page
+    .getByTestId("document-file-input")
+    .setInputFiles(path.resolve("fixtures", "sample.pdf"));
   await page.getByRole("button", { name: "Upload" }).click();
 
   await expect(page.getByText("Uploading")).toBeVisible();
@@ -416,6 +435,7 @@ test("uploads a document and shows progress feedback", async ({ page }) => {
 ### Expert Validation Flow
 
 File:
+
 - `__tests__/e2e/expert-validation.spec.ts`
 
 Example:

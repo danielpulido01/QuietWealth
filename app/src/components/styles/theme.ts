@@ -78,7 +78,7 @@ export const themes = {
     radius,
     typography: {
       ...typography,
-      fontFamily: "\"Trebuchet MS\", \"Segoe UI\", sans-serif",
+      fontFamily: '"Trebuchet MS", "Segoe UI", sans-serif',
     },
   },
 } satisfies Record<string, Theme>;
@@ -111,4 +111,3 @@ export function toThemeCssVariables(theme: Theme) {
 
   return Object.fromEntries(entries);
 }
-
