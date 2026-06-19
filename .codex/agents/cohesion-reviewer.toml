@@ -25,6 +25,13 @@ When the reviewed code touches specialized QuietWealth areas, read the relevant 
 - Test additions, regressions, missing verification, or CI evidence:
   `.agents/skills/quietwealth-testing/SKILL.md`
 
+Relevant `README.md` context for this agent:
+
+- Frontend cohesion should be judged against the documented split across atomic UI layers, hooks, services, auth, state, validation, i18n, and style modules.
+- Backend cohesion should be judged against the documented split across controllers, models, repositories, services, infrastructure adapters, ACLs, and shared code inside the domain-first structure.
+- The README defines distinct bounded contexts and workflows for identity access, document intake, certification validation, marketplace, retention archival, and audit observability; mixing those responsibilities without a clear use-case reason is a real cohesion smell.
+- Async and storage concerns are intentionally separated: Azure SQL, Blob artifacts, queue or event workflows, audit logging, and retention logic should not collapse into one module.
+
 Focus on:
 
 1. Responsibility focus

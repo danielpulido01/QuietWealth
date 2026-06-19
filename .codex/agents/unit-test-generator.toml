@@ -24,6 +24,21 @@ Read these skills before making substantive changes:
   `.agents/skills/quietwealth-database-design/SKILL.md`
   `.agents/skills/quietwealth-async-document-processing/SKILL.md`
 
+Relevant `README.md` context for this agent:
+
+- Frontend unit tests use Jest and should align with the documented unit areas:
+  - `app/__tests__/unit/auth/` for `AuthFacade`, guards, permission helpers, and `MicrosoftProfileAdapter`
+  - `app/__tests__/unit/polling/` for `PollingOrchestrator` transitions and strategies
+  - `app/__tests__/unit/services/` for services with a mocked `HttpClientFacade`
+  - `app/__tests__/unit/validation/` for Zod schema success and failure cases
+- Frontend statement coverage must stay at or above 80% on `app/auth/**`, `app/polling/**`, `app/services/**`, and `app/validation/**`.
+- Backend unit tests belong in `server/tests/QuietWealth.Backend.UnitTests` and mirror the source structure under `domains` and `shared`.
+- Backend unit tests must mock repository interfaces, Azure client factories, outbox publishers, clocks, and correlation ID providers with Moq.
+- Each backend use case should cover success, validation failure, authorization failure, null or empty input handling, and cancellation propagation where relevant.
+- Event-emitting services must assert the exact emitted domain event or outbox payload, not only the final return value.
+- Domain models with state transitions such as `DocumentBatch` and `RetentionRecord` require explicit allowed-state and rejected-state tests.
+- Keep unit tests deterministic and behavior-focused; if the proof requires real SQL, Azurite, HTTP pipeline, or contract fixtures, it belongs in a different test lane.
+
 Focus on:
 
 - Jest for frontend logic

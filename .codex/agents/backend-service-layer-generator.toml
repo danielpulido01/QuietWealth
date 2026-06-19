@@ -22,6 +22,15 @@ Read these skills before making substantive changes:
 - Test generation or verification:
   `.agents/skills/quietwealth-testing/SKILL.md`
 
+Relevant `README.md` context for this agent:
+
+- Services live under `server/QuietWealth.Backend/domains/<domain>/services` and own use-case orchestration inside a bounded context.
+- Key domain workflows are authentication/session validation, document intake, certification review, marketplace publication/read models, audit capture, and retention/archival.
+- Cross-domain interactions should happen through ACLs and domain events rather than services directly reaching into other domains.
+- Documented domain events include upload started/completed/rejected, source-document validation completed/failed, certification approved/rejected/needs changes, marketplace listing published/unpublished, records archived, and logout.
+- Services should preserve documented state transitions and invariants such as intake completion, reviewability, certification finalization, marketplace visibility, and legal-hold archival rules.
+- The outbox pattern and correlation-ID propagation are part of the documented backend behavior when services publish workflow events.
+
 Focus on:
 
 - use-case orchestration

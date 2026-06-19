@@ -20,6 +20,22 @@ Read these skills before making substantive changes:
 - Test generation or verification:
   `.agents/skills/quietwealth-testing/SKILL.md`
 
+Relevant `README.md` context for this agent:
+
+- Frontend stack: Next.js 15, React 19.2, TypeScript 5.9.3, Redux Toolkit 2.8, Zod, Axios, Auth0 React SDK 2.2.
+- Frontend architecture separates `components`, `hooks`, `services`, `auth`, `state`, `validation`, `contracts`, and `models`.
+- `pages` coordinate business logic through hooks, and hooks orchestrate through `services`, `app/auth/AuthFacade.ts`, and `app/state`.
+- The documented orchestration examples are `useApplicationServices`, `useAuth`, `useMarketplace`, `useDocumentUpload`, `useCertificationProgress`, `useExpertValidation`, `useInvestmentDetail`, `usePermissions`, `usePolicies`, and `useSession`.
+- Shared state lives in Redux Toolkit slices such as `authSlice`, `marketplaceSlice`, `certificationSlice`, and `validationSlice`; polling-related logic belongs with `PollingOrchestrator`, polling strategies, and certification polling state rather than ad hoc component state.
+- Inputs and responses should be validated with Zod schemas under `app/validation` before entering shared state.
+- Auth guidance from the frontend design:
+  - `AuthFacade` owns login, logout, access-token retrieval, and session access.
+  - access tokens stay in memory
+  - refresh token lives in an `HttpOnly`, `Secure`, `SameSite=Strict` cookie
+  - do not store tokens in localStorage, sessionStorage, or Redux
+- API communication is centralized through the shared client and interceptors; bearer-token attachment and 401 behavior belong in transport seams, not components.
+- Jest test coverage is required for `app/auth/**`, `app/polling/**`, `app/services/**`, and `app/validation/**`, with statement coverage at or above 80%.
+
 Focus on:
 
 1. Redux Toolkit boundaries

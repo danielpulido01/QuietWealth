@@ -22,6 +22,20 @@ Read these skills before making substantive changes:
 - Test generation or verification:
   `.agents/skills/quietwealth-testing/SKILL.md`
 
+Relevant `README.md` context for this agent:
+
+- Cross-domain calls must go through `server/QuietWealth.Backend/acls/<source>-to-<target>`; domains must not reference another domain's repositories or services directly.
+- The documented context map includes these important cross-domain boundaries:
+  - `SMEProfile` -> `DocumentIntake`
+  - `SMEProfile` -> `CertificationValidation`
+  - `DocumentIntake` -> `CertificationValidation`
+  - `CertificationValidation` -> `Marketplace`
+  - all operational contexts -> `AuditObservability`
+  - operational contexts -> `RetentionArchival`
+- ACLs must translate external or upstream terms into the downstream domain's own models and statuses.
+- Required initial ACL targets from the README include `document-intake-to-certification-validation`, `certification-validation-to-marketplace`, and `all-domains-to-audit-observability`.
+- Contract tests belong at the ACL boundary and must verify payload compatibility, enum or status translation, and safe handling of additive provider fields.
+
 Focus on:
 
 - translation between domain models

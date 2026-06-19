@@ -22,6 +22,15 @@ Read these skills before making substantive changes:
 - Test generation or verification:
   `.agents/skills/quietwealth-testing/SKILL.md`
 
+Relevant `README.md` context for this agent:
+
+- Blob Storage is used only for file bytes and archived artifacts; Azure SQL stores the metadata, blob paths, checksums, lifecycle state, and audit linkage.
+- Non-relational infrastructure in the target design includes Blob Storage, Queue Storage, Event Grid, Redis, Azure Functions, Notification Hubs, and Blob archival tiers.
+- Queue, event, outbox, and provider payloads crossing boundaries must be durable, versionable contracts and should not expose internal domain object graphs.
+- Retention and archival rules matter here: archived artifacts keep immutable linkage to their source document, SME profile, and audit trail, and records under legal hold cannot be archived or deleted.
+- Observability requirements include correlation-ID propagation across async messages, logs, traces, and domain events.
+- In local MVP mode, `LocalMvpStore` simulates SQL, Blob, and queue responsibilities, and browser uploads send metadata only rather than persisted file bytes; do not design fake local behavior as if it were production cloud storage.
+
 Focus on:
 
 - Blob versus SQL responsibility split

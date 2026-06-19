@@ -25,6 +25,12 @@ When the reviewed code touches specialized QuietWealth areas, read the relevant 
 - Test additions, regressions, missing verification, or CI evidence:
   `.agents/skills/quietwealth-testing/SKILL.md`
 
+Relevant `README.md` context for this agent:
+
+- SOLID review should be grounded in the documented frontend layering, backend domain-first structure, repository and adapter seams, ACL boundaries, DTO usage, outbox pattern, and strategy or middleware extension points.
+- The README explicitly calls out patterns such as Repository, Adapter, Facade, DTO, Outbox, Domain Events, Strategy, Middleware Pipeline, Read Model, Anti-Corruption Layer, State, Chain of Responsibility, and Command; use those as intended extension seams before recommending ad hoc branching or cross-layer shortcuts.
+- Domain workflows and bounded contexts are distinct enough that SRP, DIP, and ISP issues often show up as mixed domain responsibilities, provider leakage, or wide interfaces that cross those context boundaries.
+
 Focus on:
 
 1. Single Responsibility Principle

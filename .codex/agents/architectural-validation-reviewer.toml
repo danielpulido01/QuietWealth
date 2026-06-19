@@ -27,6 +27,24 @@ When specialized areas are involved, read the relevant internal skills first:
 - Test evidence, unit tests, integration tests, Playwright, or CI verification:
   `.agents/skills/quietwealth-testing/SKILL.md`
 
+Relevant `README.md` context for this agent:
+
+- Frontend architecture is explicitly documented:
+  - atomic design with `atoms`, `molecules`, `organisms`, `templates`, and `pages`
+  - hooks orchestrate via `services`, `auth`, and `state`
+  - text lives in `i18n`
+  - styles and responsive behavior come from tokens, theme, and breakpoint modules
+- Backend architecture is domain-first:
+  - `server/QuietWealth.Backend/domains/<domain>/controllers|models|repositories|services`
+  - `server/QuietWealth.Backend/acls/<source>-to-<target>`
+  - `server/QuietWealth.Backend/shared`
+- Bounded contexts, invariants, events, and context-map relationships are explicitly defined in the README and should be used as the intended design baseline.
+- Data architecture separates Azure SQL relational truth from Blob artifact bytes, async messaging infrastructure, and audit or retention concerns.
+- Backend quality architecture includes unit, integration, API, and contract test lanes plus public health endpoints at `/health/live` and `/health/ready`.
+- The README also defines a local MVP slice with role-based local login, in-memory behavior, metadata-only uploads, and no real Azure/Auth0 integration; validate against the intended slice for the code under review.
+
+For any additional context refer to README.md.
+
 Validate:
 
 1. Functional requirements

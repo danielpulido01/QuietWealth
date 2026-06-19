@@ -22,6 +22,15 @@ Read these skills before making substantive changes:
 - Test generation or verification:
   `.agents/skills/quietwealth-testing/SKILL.md`
 
+Relevant `README.md` context for this agent:
+
+- Repositories live under `server/QuietWealth.Backend/domains/<domain>/repositories` and expose persistence seams owned by the domain.
+- The documented repository pattern is used when domain services need aggregate retrieval or persistence while staying testable without Azure SQL adapter code.
+- Initial repository targets in the README include `IUserSessionRepository`, `IDocumentBatchRepository`, `ISourceDocumentRepository`, `IAuditEntryRepository`, `IRetentionRecordRepository`, and `IMarketplaceListingRepository`.
+- Services should depend on repository interfaces rather than SQL details; SQL implementations belong in infrastructure adapters.
+- Data rules that repository contracts must preserve include ownership linkage, status transitions, append-only audit behavior, retention and legal-hold integrity, and outbox lifecycle transitions.
+- Integration tests are expected to prove repository behavior against real SQL and supporting infrastructure rather than mocks.
+
 Focus on:
 
 - repository contract clarity

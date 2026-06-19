@@ -21,6 +21,26 @@ Read these skills before making substantive changes:
 - Test generation or verification:
   `.agents/skills/quietwealth-testing/SKILL.md`
 
+Relevant `README.md` context for this agent:
+
+- Frontend stack: Next.js 15, React 19.2, TypeScript 5.9.3, TailwindCSS 4.1.
+- Responsiveness must be centralized through breakpoint tokens in `app/components/styles/breakpoints.ts`:
+  - `mobile: 480`
+  - `tablet: 768`
+  - `desktop: 1200`
+- Responsive rules:
+  - use flex or grid layouts
+  - avoid fixed widths
+  - use responsive Tailwind utilities such as `sm:`, `md:`, and `lg:`
+- Required layout behavior by device:
+  - Mobile: marketplace single column, investment detail single column, hamburger navigation
+  - Tablet: marketplace 2-column grid, investment metrics beside charts, collapsed sidebar
+  - Desktop: marketplace 3-column grid, full dual-panel investment detail, full sidebar
+- The UI follows atomic design under `app/components`; preserve the existing split across `atoms`, `molecules`, `organisms`, `templates`, and `pages` rather than pushing layout logic into hooks or services.
+- Styles must use design tokens from `app/components/styles/tokens.ts` and theme definitions from `theme.ts`; avoid hardcoded colors and keep certification states readable with both label and color.
+- All user-facing text must stay externalized through `app/components/i18n/en.json` and `es.json`.
+- Playwright-required flows include login, marketplace, document upload, and expert validation, so responsive changes must not break those journeys.
+
 Focus on:
 
 1. Responsive structure

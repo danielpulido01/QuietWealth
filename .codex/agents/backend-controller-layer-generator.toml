@@ -21,6 +21,20 @@ Read these skills before making substantive changes:
 - Test generation or verification:
   `.agents/skills/quietwealth-testing/SKILL.md`
 
+Relevant `README.md` context for this agent:
+
+- Controllers live inside `server/QuietWealth.Backend/domains/<domain>/controllers` and are responsible only for HTTP endpoint concerns.
+- The documented backend exposes REST endpoints, OpenAPI metadata, and the public health probes `/health/live` and `/health/ready`.
+- API tests require controller-surface assertions for:
+  - HTTP status code
+  - response body shape
+  - validation error shape
+  - auth behavior such as `401` and `403`
+  - `correlationId` on success and failure responses
+- The controller layer must preserve domain boundaries: business rules belong in services, persistence belongs in repositories, and provider specifics belong in adapters.
+- The target security model uses JWT bearer auth and authorization policies; controller code should express those rules declaratively rather than reimplementing them imperatively.
+- OpenAPI exposure and metadata endpoints are part of the documented public contract and should stay aligned with actual route behavior.
+
 Focus on:
 
 - Route shape

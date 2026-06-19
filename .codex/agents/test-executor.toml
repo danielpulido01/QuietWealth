@@ -16,6 +16,26 @@ Read this skill before running or scoping tests:
 
 - `.agents/skills/quietwealth-testing/SKILL.md`
 
+Relevant `README.md` context for this agent:
+
+- Frontend testing requirements:
+  - unit tests use Jest
+  - Playwright covers the required flows: `login.spec.ts`, `marketplace.spec.ts`, `document-upload.spec.ts`, and `expert-validation.spec.ts`
+  - unit coverage explicitly targets `app/auth/`, `app/polling/`, `app/services/`, and `app/validation/`
+  - statement coverage on those frontend areas must stay at or above 80%
+- Backend tests are split into four required projects under `server/tests`:
+  - `QuietWealth.Backend.UnitTests`: domain models, services, validators, mappers, ACL translators in isolation
+  - `QuietWealth.Backend.IntegrationTests`: repositories, SQL access, outbox persistence, Azure adapter wiring, health-check registrations
+  - `QuietWealth.Backend.ApiTests`: controllers, filters, auth policies, model validation, middleware, response contracts, health endpoints
+  - `QuietWealth.Backend.ContractTests`: ACL contracts, provider payload normalization, queue or event payload compatibility
+- Backend local validation order from the README:
+  - `dotnet restore server/QuietWealth.Backend.sln`
+  - `dotnet build server/QuietWealth.Backend.sln --configuration Release --no-restore`
+  - `dotnet test` for UnitTests, IntegrationTests, ApiTests, and ContractTests
+- Integration tests use Testcontainers in CI; local debugging can use `server/tests/infrastructure/start-test-dependencies.ps1` and `stop-test-dependencies.ps1` for SQL Server, Azurite, and Redis.
+- API tests must cover `/health/live` and `/health/ready`, and backend workflows must verify auth/session, document intake, certification, marketplace, and retention surfaces as applicable.
+- Choose the smallest meaningful test scope that proves the changed behavior without overstating coverage.
+
 Focus on:
 
 - choosing the narrowest meaningful test command

@@ -34,6 +34,20 @@ When the failing area is specialized, also read the relevant skill:
   `.agents/skills/quietwealth-database-design/SKILL.md`
   `.agents/skills/quietwealth-async-document-processing/SKILL.md`
 
+Relevant `README.md` context for this agent:
+
+- Frontend tests use Jest plus Playwright for the required login, marketplace, document upload, and expert-validation flows.
+- Frontend coverage pressure is concentrated on `app/auth/**`, `app/polling/**`, `app/services/**`, and `app/validation/**`.
+- Backend failures should be classified in the context of four test lanes:
+  - UnitTests for domain logic and translators in isolation
+  - IntegrationTests for repositories, SQL, adapters, outbox persistence, and readiness wiring
+  - ApiTests for controller or middleware HTTP behavior, auth, validation, and health endpoints
+  - ContractTests for ACL payload compatibility and boundary normalization
+- Health behavior matters: `/health/live` should stay healthy when the process is running, while `/health/ready` should reflect dependency degradation.
+- Integration failures may legitimately point to container or dependency lifecycle issues such as SQL Server, Azurite Blob or Queue, or Redis not starting.
+- Contract failures often indicate provider-payload drift, renamed or retyped fields, or enum or status translation mismatches at the ACL boundary.
+- Diagnose current local-MVP behavior separately from production assumptions; `LocalMvpStore`, metadata-only uploads, and local role login are intentional in the MVP.
+
 Output format:
 
 ## Hallazgos y Correcciones sugeridas

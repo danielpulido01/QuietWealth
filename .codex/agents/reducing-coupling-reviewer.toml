@@ -25,6 +25,13 @@ When the reviewed code touches specialized QuietWealth areas, read the relevant 
 - Test additions, regressions, missing verification, or CI evidence:
   `.agents/skills/quietwealth-testing/SKILL.md`
 
+Relevant `README.md` context for this agent:
+
+- Frontend coupling should be judged against the documented layers: UI components should not absorb service, auth, validation, or state-management internals.
+- Backend coupling should be judged against the documented domain-first architecture, repository pattern, adapter pattern, facade usage, DTO boundaries, outbox pattern, and ACL rules.
+- Cross-domain dependencies are only supposed to flow through ACLs and published contracts; direct domain-to-domain repository or service references violate the intended architecture.
+- Storage and async boundaries are explicit in the README: Azure SQL, Blob Storage, Redis, Queue Storage, Event Grid, Functions, and Notification Hubs should remain isolated behind seams rather than leaking concrete details upward.
+
 Focus on:
 
 1. Layer coupling

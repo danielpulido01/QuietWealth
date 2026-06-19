@@ -25,6 +25,14 @@ Read these skills before making substantive changes:
 - Test generation or verification:
   `.agents/skills/quietwealth-testing/SKILL.md`
 
+Relevant `README.md` context for this agent:
+
+- Infrastructure adapters isolate Azure SQL, Blob Storage, Redis, Event Grid, Queue Storage, Azure Functions, Notification Hubs, and other provider-specific concerns from higher layers.
+- Configuration and health-check wiring are part of the documented backend surface; readiness must account for SQL, Blob Storage, Queue Storage, Redis, Notification Hubs, and any runtime-critical external dependencies.
+- The backend relies on Application Insights and correlation-ID propagation for end-to-end telemetry.
+- Blob Storage is for file bytes and archived artifacts; Azure SQL remains the relational source of truth for metadata, blob paths, checksums, lifecycle state, and audit linkage.
+- Integration tests are expected to validate adapter configuration and behavior with real dependency surrogates such as SQL Server containers and Azurite, not with mocks for the provider under test.
+
 Focus on:
 
 - SDK isolation

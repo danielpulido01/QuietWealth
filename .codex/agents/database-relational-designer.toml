@@ -22,6 +22,21 @@ Read these skills before making substantive changes:
 - Test generation or verification:
   `.agents/skills/quietwealth-testing/SKILL.md`
 
+Relevant `README.md` context for this agent:
+
+- Azure SQL Database is the primary relational store; it holds structured transactional data across users, SME profiles, document batches, certifications, marketplace metrics, audit records, retention metadata, and outbox messages.
+- Blob Storage is not the relational store; SQL keeps blob metadata such as path, checksum, lifecycle state, and audit linkage.
+- Core documented relational entities are `UserSession`, `AccessPolicy`, `SMEProfile`, `DocumentBatch`, `SourceDocument`, `CertificationReview`, `MarketplaceListing`, `InvestmentMetric`, `AuditEntry`, `RetentionRecord`, and `OutboxMessage`.
+- Preserve the documented relationships and indexes, especially ownership links, `DocumentBatch` to `SourceDocument`, `DocumentBatch` to `CertificationReview`, `SMEProfile` to marketplace or metric records, and the composite indexes called out in the DBML.
+- Enforce the documented integrity rules:
+  - `SourceDocument` completion requires `blob_path` and `checksum`
+  - allowed `DocumentBatch.status` values are `Pending`, `Processing`, `Completed`, `Failed`, `UnderReview`, `Approved`, `Rejected`, `NeedsChanges`, and `Archived`
+  - allowed `CertificationReview.decision` values are `Approved`, `Rejected`, and `NeedsChanges`
+  - only approved certifications can drive `MarketplaceListing`
+  - `AuditEntry` is append-only
+  - `RetentionRecord` and `OutboxMessage` transitions must be idempotent and traceable
+- Schema artifacts belong under `server/deploy/sql/create`, `seed`, `migrations`, and `rollback`, and migrations must include backfill or rollback handling where the README requires it.
+
 Focus on:
 
 - normalized relational design

@@ -25,6 +25,23 @@ Read these skills before making substantive changes:
 - Test generation or verification:
   `.agents/skills/quietwealth-testing/SKILL.md`
 
+Relevant `README.md` context for this agent:
+
+- Backend stack: ASP.NET Core, REST over HTTPS, OpenAPI, Azure SQL, Blob Storage, Redis, Event Grid, Queue Storage, Azure Functions, Notification Hubs, Application Insights.
+- Code organization is domain-first under `server/QuietWealth.Backend` with `domains/<domain>/controllers`, `models`, `repositories`, and `services`, plus cross-domain `acls` and `shared`.
+- Primary bounded contexts are `IdentityAccess`, `SMEProfile`, `DocumentIntake`, `CertificationValidation`, `Marketplace`, `RetentionArchival`, and `AuditObservability`.
+- Relevant backend workflows are:
+  - user authentication and session validation
+  - SME document intake
+  - expert validation and certification
+  - marketplace browse and investment detail reads
+  - audit event capture
+  - retention and archival
+- Public health probes are `/health/live` and `/health/ready`.
+- API contracts should stay aligned with OpenAPI and the documented HTTP surface verified in API tests, including auth/session, file intake, retention, metadata/OpenAPI, and health endpoints where those exist in the codebase.
+- Security expectations include JWT bearer validation in the target architecture, request payload limits, authorization policies, and no leaking of secrets or raw sensitive values.
+- Observability expectations include `correlationId` propagation, meaningful business events, and health or readiness telemetry.
+
 Focus on:
 
 1. Controller, DTO, and service boundaries

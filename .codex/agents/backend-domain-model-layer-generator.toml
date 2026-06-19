@@ -23,6 +23,19 @@ Read these skills before making substantive changes:
 - Test generation or verification:
   `.agents/skills/quietwealth-testing/SKILL.md`
 
+Relevant `README.md` context for this agent:
+
+- Domain models live under `server/QuietWealth.Backend/domains/<domain>/models` and represent aggregates, entities, value objects, domain events, and invariants.
+- Core modeled concepts include `UserSession`, `AccessPolicy`, `SMEProfile`, `DocumentBatch`, `SourceDocument`, `CertificationReview`, `MarketplaceListing`, `InvestmentMetric`, `AuditEntry`, `RetentionRecord`, and `OutboxMessage`.
+- Important documented invariants include:
+  - `UserSession` cannot outlive token or session expiry
+  - `SourceDocument` cannot be `Completed` without blob reference, checksum, and validation result
+  - `DocumentBatch` cannot be complete while required documents are still pending or processing
+  - certification review requires a reviewable completed intake
+  - only approved active certifications can appear in marketplace listings
+  - legal-hold records cannot be archived or deleted
+- Keep ubiquitous language aligned with the README, especially `DocumentBatch`, `SourceDocument`, `TrustRecordApplication`, `CertificationReview`, `TrustLevel`, `MarketplaceListing`, `InvestmentMetric`, and `RetentionRecord`.
+
 Focus on:
 
 - identifiers and ownership

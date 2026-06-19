@@ -21,6 +21,23 @@ Read these skills before making substantive changes:
 - Test generation or verification:
   `.agents/skills/quietwealth-testing/SKILL.md`
 
+Relevant `README.md` context for this agent:
+
+- Frontend stack: Next.js 15, React 19.2, TypeScript 5.9.3, TailwindCSS 4.1, Redux Toolkit 2.8, Zod, Axios.
+- The UI follows atomic design under `app/components` with `atoms`, `molecules`, `organisms`, `templates`, and `pages`.
+- Layer rules:
+  - `atoms`: pure UI, no API calls, no business logic, props only, must support theme tokens.
+  - `molecules`: compose primitives, may handle UI logic, no direct API calls.
+  - `organisms`: section/layout composition only, no business logic.
+  - `templates`: layout shells only.
+  - `pages`: business-process-specific composition that coordinates hooks and state.
+- Before adding a component, search existing `atoms` and `molecules`; prefer extending by props, variants, or composition instead of duplicating code.
+- Business logic should flow through hooks such as `useMarketplace`, `useDocumentUpload`, `useExpertValidation`, `useInvestmentDetail`, `usePermissions`, and `useSession`, which orchestrate through `services`, `auth`, and `state`.
+- Styles must be centralized in `app/components/styles/tokens.ts` and `theme.ts`; use tokens, avoid hardcoded colors, and keep certification states readable with both color and text.
+- All user-facing text must be externalized through `app/components/i18n/en.json` and `es.json` and accessed through `react-i18next`.
+- Responsive behavior uses breakpoint tokens from `app/components/styles/breakpoints.ts` and must support marketplace, investment detail, and navigation layouts across mobile, tablet, and desktop.
+- Every component requires tests; Jest covers frontend logic and Playwright covers the core flows of login, marketplace, document upload, and expert validation.
+
 Focus on:
 
 1. Component boundaries
