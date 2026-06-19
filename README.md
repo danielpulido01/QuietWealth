@@ -1263,8 +1263,16 @@ classDiagram
 - Notifications: Azure Notification Hubs
 - Load balancing: no dedicated load balancer required for the expected traffic profile
 - Backend framework and language: .NET SDK 10.0.102, ASP.NET Core
-- Repository structure: monorepo shared with the frontend; backend folder: [`server/QuietWealth.Backend`](/server/QuietWealth.Backend) (AGREGAR si cambia la estructura final)
-- Testing: xUnit for unit and integration tests
+- Repository structure: monorepo shared with the frontend; application source under `server/QuietWealth.Backend` and backend test projects under `server/tests`
+- Test framework: xUnit
+- Assertion library: FluentAssertions
+- Mocking: Moq
+- API and in-memory host testing: `Microsoft.AspNetCore.Mvc.Testing` with `WebApplicationFactory`
+- Ephemeral dependency orchestration for integration tests: Testcontainers for .NET
+- Deterministic database cleanup between tests: Respawn
+- Coverage collection and reporting: `coverlet.collector` + ReportGenerator
+- Contract testing at the Anti-Corruption Layer (ACL): PactNet for HTTP provider contracts and Verify.Xunit for versioned event/message fixtures
+- Health check framework: `Microsoft.Extensions.Diagnostics.HealthChecks` with dependency-specific checks for SQL, Blob Storage, Queue Storage, Redis, and Notification Hubs
 - API documentation tooling: Swagger / OpenAPI tooling for contract publication and validation
 - Code quality: `dotnet format` and built-in .NET analyzers
 - Services:
@@ -1335,6 +1343,149 @@ classDiagram
 - Correlation IDs: propagate a single correlation ID across all services, async messages, logs, traces, and domain events.
 - SLIs defined from design: availability and latency SLIs must be defined at architecture stage for each critical user flow.
 
+## Backend Testing and Quality Strategy
+
+### Mandatory test project layout
+Developers must create and maintain the following backend [test projects](server/tests):
+
+| Project | Primary scope | Must not test |
+|---|---|---|
+| [UnitTests](server/tests/QuietWealth.Backend.UnitTests) | Domain models, domain services, validators, mappers, ACL translators in isolation | Real HTTP, real SQL, real Azure SDK calls |
+| [IntegrationTests](server/tests/QuietWealth.Backend.IntegrationTests) | Repository implementations, SQL access, outbox persistence, Azure adapter wiring, health-check registrations | Full browser flows or UI concerns |
+| [ApiTests](server/tests/QuietWealth.Backend.ApiTests) | Controllers, filters, auth policies, model validation, middleware, response contracts, health endpoints | Direct repository internals |
+| [ContractTests](server/tests/QuietWealth.Backend.ContractTests) |  [Anti-Corruption Layer](server/QuietWealth.Backend/acls) contracts | Controller routing or UI behavior |
+
+[Common](server/tests/Common) may be added for shared fixtures, test data builders, fake JWT generation, and container bootstrapping, but assertions must remain in the owning test project.
+
+### 1. [Unit testing strategy](server/tests/QuietWealth.Backend.UnitTests)
+
+Every domain service, aggregate invariant, mapper, and validator must have fast, deterministic tests with all external boundaries mocked.
+
+Required rules:
+- Test classes mirror the source folder structure under [domains](server/QuietWealth.Backend/domains) and [shared](server/QuietWealth.Backend/shared).
+- Repository interfaces, Azure client factories, outbox publishers, clocks, and correlation ID providers are mocked with Moq.
+- Each use case must cover success, validation failure, authorization failure, null/empty input handling, and cancellation token propagation where relevant.
+- Event-emitting services must assert the exact domain event or outbox payload produced, not only the final return value.
+- Domain models that enforce state transitions, such as `DocumentBatch` and `RetentionRecord`, must have explicit transition tests for allowed and rejected states.
+
+Minimum unit-test targets:
+- [IdentityAccessService.cs](server/QuietWealth.Backend/domains/identity-access/services/IdentityAccessService.cs)
+- [DocumentIntakeService.cs](server/QuietWealth.Backend/domains/document-intake/services/DocumentIntakeService.cs)
+- [RetentionArchivalService.cs](server/QuietWealth.Backend/domains/retention-archival/services/RetentionArchivalService.cs)
+- [AuditObservabilityService.cs](server/QuietWealth.Backend/domains/audit-observability/services/AuditObservabilityService.cs)
+- DTO and mapper translation logic
+- Shared API response and error-shape helpers
+
+### 2. [Integration testing strategy](server/tests/QuietWealth.Backend.IntegrationTests)
+
+Integration tests must validate that infrastructure code works against realistic dependencies. This tests must prove SQL persistence, outbox persistence, configuration binding, and Azure-facing adapter behavior before deployment.
+
+Required implementation:
+- Use Testcontainers for .NET to start disposable dependencies in CI and local runs.
+- Use SQL Server in a container for repository and unit-of-work tests.
+- Use Azurite in a container for Blob Storage and Queue Storage adapter tests.
+- Reset relational state between tests with Respawn; never rely on test ordering.
+- Keep one container set per test collection to reduce runtime, but isolate data per test.
+
+What must be covered:
+- `IUserSessionRepository`, `IDocumentBatchRepository`, `IRetentionRecordRepository`, and `IAuditEntryRepository` implementations.
+- [AzureSqlConnectionFactory.cs](server/QuietWealth.Backend/shared/Infrastructure/AzureSqlConnectionFactory.cs), [AzureBlobClientFactory.cs](server/QuietWealth.Backend/shared/Infrastructure/AzureBlobClientFactory.cs), and [NotificationHubClientFactory.cs](server/QuietWealth.Backend/shared/Infrastructure/NotificationHubClientFactory.cs) configuration/wiring.
+- Outbox persistence and retry-state transitions.
+- Readiness health checks for SQL, Blob Storage, Queue Storage, Redis, and Notification Hubs.
+
+What must not be done:
+- No mocks for the dependency under test.
+- No calls to live Azure subscriptions from CI.
+- No "all green" claim without containers starting successfully.
+
+### 3. [API testing strategy](server/tests/QuietWealth.Backend.ApiTests)
+
+API tests validate the ASP.NET Core HTTP surface through `WebApplicationFactory`, running the backend in-memory and asserting observable behavior at the controller and middleware boundary.
+
+Required assertions per endpoint:
+- HTTP status code
+- Response body shape
+- Validation error shape
+- Auth behavior (`401`, `403`)
+- `correlationId` presence on success and failure responses
+- OpenAPI exposure endpoint behavior
+
+Minimum API coverage for the current backend surface:
+
+| Endpoint group | Required tests |
+|---|---|
+| `/api/auth/*` | login success/failure, logout `204`, session/profile auth and payload shape |
+| `/api/files` and `/api/files/upload` | read success, upload accepted response, invalid request rejection, delete success/not-found |
+| `/api/activity` | authenticated read, unauthorized access, stable response contract |
+| `/api/retention/archive` | accepted response, validation failure, authorization failure |
+| `/api/metadata/openapi` | returns the published OpenAPI document location |
+| `/health/live` and `/health/ready` | liveness stays up when app process is healthy; readiness reflects dependency state |
+
+Implementation rules:
+- Use the real ASP.NET Core pipeline, middleware, filters, and JSON serialization settings.
+- Replace only external dependencies with test doubles or container-backed services.
+- API tests own HTTP contract assertions for public endpoints; contract tests do not duplicate controller routing checks.
+- Every new controller action must ship with at least one success-path test and one failure-path test in [ApiTests](server/tests/QuietWealth.Backend.ApiTests).
+
+### 4. Health-check strategy
+
+The backend must expose exactly two public probes:
+
+| Endpoint | Purpose | Failure meaning |
+|---|---|---|
+| `/health/live` | Process is running and request pipeline can answer | The app instance must be restarted or replaced |
+| `/health/ready` | The API is safe to receive traffic | One or more critical dependencies are unavailable or degraded |
+
+Implementation requirements:
+- Implement health checks through `AddHealthChecks()` and `MapHealthChecks()`.
+- Tag checks so liveness never performs downstream network I/O.
+- Readiness must validate at least Azure SQL, Blob Storage, Queue Storage, Redis, Notification Hubs, and any external identity metadata fetch the API depends on at runtime.
+- Return machine-readable JSON with check name, status, duration, and failure description.
+- Publish health-check results to Application Insights as availability telemetry.
+- Deployment workflows must call `/health/ready` after deployment and fail the job if readiness is not `Healthy`.
+
+Test requirements:
+- API tests must assert both endpoints are registered.
+- Integration tests must force one dependency failure and prove `/health/ready` degrades while `/health/live` remains healthy.
+
+### 5. [Contract testing strategy](server/tests/QuietWealth.Backend.ContractTests)
+
+Contract testing belongs at the Anti-Corruption Layer. Prove external payloads, provider schemas, and cross-context translations are normalized before entering the domain model.
+
+Scope:
+- All code under [acls](server/QuietWealth.Backend/acls)
+- External HTTP provider payloads consumed by the backend
+- Queue, Event Grid, and outbox message payloads crossing bounded contexts
+- Any adapter translating Auth0, Microsoft Entra ID, Blob metadata, or future marketplace/certification provider payloads
+
+Implementation rules:
+- Public API controller contracts are covered by API tests; ACL contract tests cover only boundary translation and backward compatibility.
+- For HTTP-based providers, use PactNet consumer contracts generated by the ACL-facing client.
+- For event/message/file-metadata contracts, store approved JSON fixtures and verify them with Verify.Xunit.
+- A contract test must fail if a required field is removed, renamed, changes type, or changes semantic meaning without an intentional version bump.
+- Additive fields are allowed only when the ACL ignores unknown fields safely.
+- Every ACL must have explicit mapping tests proving external enums/status values translate to internal domain values.
+- Contract fixtures must live under the contract test project and be versioned with the source that consumes them.
+
+Required initial ACL contract targets:
+- `identity-access` adapters that normalize Auth0 / Microsoft Entra claims
+- `document-intake-to-certification-validation`
+- `certification-validation-to-marketplace`
+- `all-domains-to-audit-observability`
+
+### Coverage and quality gates
+
+Backend coverage gates must be enforced in CI:
+
+| Test lane | Minimum gate |
+|---|---|
+| Unit tests | 85% line coverage on services, validators, and ACL translators |
+| API tests | 80% line coverage on controllers and shared API middleware |
+| Integration tests | No percentage gate; all required repository and readiness scenarios must pass |
+| Contract tests | 100% pass required; no skipped contract tests on protected branches |
+
+Developers may exclude generated OpenAPI files, DTOs that only carry data, and trivial configuration records from coverage, but must not exclude services, ACLs, repositories, or controllers.
+
 ## Infrastructure (DevOps)
 <<Falta validar scripts finales de provisioning para CI/CD>>
 <<Podemos agregar reglas definitivas de branching y protección de ramas>>
@@ -1398,7 +1549,7 @@ For each of the 4 app/role combos (`prod-frontend`, `prod-api`, `qa-frontend`, `
 Each Web App has its own Entra app registration and `clientId`. `tenantId` and `subscriptionId` are shared within an environment.
 
 ### CI Workflows
-Four workflow files, all following the same structure.
+There should be one reusable backend validation workflow and two API deployment workflows. The deployment workflows must not publish unless all backend test lanes pass.
 
 **Triggers:**
 - Push to `main` → `paths: server/**` or `app/**` → deploys to Production
@@ -1413,6 +1564,39 @@ build (environment: QA|Production, permissions: contents:read)
 
 To enable OIDC token exchange with azure, `id-token: write` is required on the `deploy` job only.
 
+#### Required backend validation flow
+
+In addition to the deployment triggers listed above, backend CI must include a reusable validation job that runs on `pull_request` and can also be called from the staging and production API workflows before packaging.
+
+Required execution order:
+
+```yaml
+- name: Restore backend
+  run: dotnet restore server/QuietWealth.Backend.sln
+
+- name: Build backend
+  run: dotnet build server/QuietWealth.Backend.sln --configuration Release --no-restore
+
+- name: Unit tests
+  run: dotnet test server/tests/QuietWealth.Backend.UnitTests/QuietWealth.Backend.UnitTests.csproj --configuration Release --no-build --logger "trx;LogFileName=unit-tests.trx" --collect:"XPlat Code Coverage"
+
+- name: Integration tests
+  run: dotnet test server/tests/QuietWealth.Backend.IntegrationTests/QuietWealth.Backend.IntegrationTests.csproj --configuration Release --no-build --logger "trx;LogFileName=integration-tests.trx" --collect:"XPlat Code Coverage"
+
+- name: API tests
+  run: dotnet test server/tests/QuietWealth.Backend.ApiTests/QuietWealth.Backend.ApiTests.csproj --configuration Release --no-build --logger "trx;LogFileName=api-tests.trx" --collect:"XPlat Code Coverage"
+
+- name: Contract tests
+  run: dotnet test server/tests/QuietWealth.Backend.ContractTests/QuietWealth.Backend.ContractTests.csproj --configuration Release --no-build --logger "trx;LogFileName=contract-tests.trx" --collect:"XPlat Code Coverage"
+```
+
+Required workflow behaviors:
+- Upload all `*.trx` files and coverage artifacts even when one test lane fails.
+- Fail the workflow immediately if unit or contract tests fail.
+- Allow API and integration tests to finish in the same run so developers receive full defect information.
+- Publish only after all four test lanes are green.
+- Run a post-deploy readiness probe against `/health/ready`.
+
 #### Trigger Conditions & Job Dependencies
 
 | Workflow file | Branch | Path filter | Artifact name |
@@ -1423,6 +1607,26 @@ To enable OIDC token exchange with azure, `id-token: write` is required on the `
 | `staging_qaquietwealth-api.yml` | `staging` | `server/**` | `.net-app` |
 
 Artifact is passed between jobs via `actions/upload-artifact` / `actions/download-artifact`.
+
+#### Manual execution
+
+Developers must be able to run every backend lane locally before pushing:
+
+```powershell
+dotnet restore server/QuietWealth.Backend.sln
+dotnet build server/QuietWealth.Backend.sln --configuration Release --no-restore
+dotnet test server/tests/QuietWealth.Backend.UnitTests/QuietWealth.Backend.UnitTests.csproj --configuration Release --no-build
+dotnet test server/tests/QuietWealth.Backend.IntegrationTests/QuietWealth.Backend.IntegrationTests.csproj --configuration Release --no-build
+dotnet test server/tests/QuietWealth.Backend.ApiTests/QuietWealth.Backend.ApiTests.csproj --configuration Release --no-build
+dotnet test server/tests/QuietWealth.Backend.ContractTests/QuietWealth.Backend.ContractTests.csproj --configuration Release --no-build
+```
+
+To execute through GitHub Actions manually, `workflow_dispatch` must expose at least these inputs:
+- `environment`: `qa` or `prod`
+- `test_scope`: `all`, `unit`, `integration`, `api`, or `contract`
+- `deploy_after_tests`: `true` or `false`
+
+If `deploy_after_tests=false`, the workflow runs validation only and publishes test artifacts without deploying.
 
 #### Key Constraints
 
@@ -1524,10 +1728,10 @@ az deployment sub create `
 
 ### Pipeline structure
 - `ci-frontend`: install, lint, test, build frontend.
-- `ci-backend`: restore, build, test backend (.NET), run static analysis/format checks.
+- `ci-backend`: restore, build, run unit tests, integration tests, API tests, contract tests, collect coverage, and run static analysis/format checks.
 - `security-scan`: dependency/license checks and secret scanning.
 - `infra-plan`: `bicep build` + `az deployment what-if` per environment.
-- `deploy-qa` / `deploy-prod`: apply infra changes (as approved) and deploy application artifacts.
+- `deploy-qa` / `deploy-prod`: apply infra changes (as approved), deploy application artifacts, and validate `/health/ready` before marking the release successful.
 
 ### Governance and quality gates
 - Required PR checks before merge: frontend CI, backend CI, security scan.
