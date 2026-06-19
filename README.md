@@ -491,7 +491,7 @@ Developers must:
 | Desktop | 3-column grid | Full dual panel | Full sidebar |
 
 ### 1.3.8 Testing Requirements for Components
-Each component must include tests.
+Each component must include tests. Verification command: `cd app && npm run test:ci`
 
 #### Unit tests (Jest)
 | Folder | Covers |
