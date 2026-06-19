@@ -31,6 +31,12 @@
       "skillPath": "skills/next-best-practices/SKILL.md",
       "computedHash": "f4678aef4ffc10a5ea64a91e57abe5a5081af813b06d58d565caf3e8ef56e26c"
     },
+    "postgresql-table-design": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "skillPath": "plugins/database-design/skills/postgresql/SKILL.md",
+      "computedHash": "d7d040ee506a300c08a64b9ef6de9aa677b6d7251e33c3c87e0608f821a9506d"
+    },
     "supabase-postgres-best-practices": {
       "source": "supabase/agent-skills",
       "sourceType": "github",
