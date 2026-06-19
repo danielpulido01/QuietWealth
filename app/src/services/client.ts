@@ -1,3 +1,4 @@
+import axios, { type AxiosRequestConfig, type AxiosResponse, type Method } from "axios";
 import type { ZodTypeAny } from "zod";
 import { ApiError, NetworkError } from "../models/app-error";
 import { errorHandler } from "../utils/error-handler";
@@ -98,6 +99,62 @@ function withJsonContentType(init: RequestInit = {}) {
     ...init,
     headers,
   };
+}
+
+function toAxiosHeaders(headersInit?: HeadersInit) {
+  const headers = new Headers(headersInit);
+  return Object.fromEntries(headers.entries());
+}
+
+function resolveWithCredentials(credentials: RequestCredentials) {
+  return credentials === "include";
+}
+
+function toAxiosRequestConfig(
+  url: string,
+  init: RequestInit,
+  credentials: RequestCredentials,
+): AxiosRequestConfig {
+  const requestInit = withJsonContentType(init);
+
+  return {
+    url,
+    method: (requestInit.method ?? "GET") as Method,
+    headers: toAxiosHeaders(requestInit.headers),
+    data: requestInit.body,
+    signal: requestInit.signal,
+    withCredentials: resolveWithCredentials(credentials),
+    responseType: "arraybuffer",
+    transformResponse: [(data) => data],
+    validateStatus: () => true,
+  };
+}
+
+function toResponseHeaders(headersMap: AxiosResponse["headers"]) {
+  const headers = new Headers();
+
+  Object.entries(headersMap ?? {}).forEach(([key, value]) => {
+    if (value === undefined) {
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      value.forEach((item) => headers.append(key, item));
+      return;
+    }
+
+    headers.set(key, String(value));
+  });
+
+  return headers;
+}
+
+function toFetchResponse(response: AxiosResponse<ArrayBuffer>) {
+  return new Response(response.data, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: toResponseHeaders(response.headers),
+  });
 }
 
 async function readErrorMessage(response: Response) {
@@ -247,20 +304,17 @@ class SourceHttpClient implements ApiSourceClient {
     const method = (init.method ?? "GET").toUpperCase();
     const url = this.buildUrl(input);
     const start = performance.now();
-    const requestInit = withJsonContentType(init);
+    const axiosConfig = toAxiosRequestConfig(url, init, this.config.credentials);
 
     logger.trace("API request", {
       source: this.source,
       method,
       url,
-      hasBody: Boolean(requestInit.body),
+      hasBody: Boolean(init.body),
     });
 
     try {
-      const response = await fetch(url, {
-        ...requestInit,
-        credentials: this.config.credentials,
-      });
+      const response = toFetchResponse(await axios.request<ArrayBuffer>(axiosConfig));
 
       logger.info("API response", {
         source: this.source,
