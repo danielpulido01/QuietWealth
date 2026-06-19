@@ -1240,7 +1240,6 @@ src/
   - CertificationRejected
   - MarketplaceListingViewed
   - RecordsArchived
-  - <<Agregar otros eventos de negocio>>
   - ApiRequestFailed
   - UnhandledExceptionCaptured
 - Progress polling guideline: do not log every frontend polling request; log only meaningful status transitions and exceptional progress-check failures
@@ -1259,8 +1258,6 @@ src/
 - SLIs defined from design: availability and latency SLIs must be defined at architecture stage for each critical user flow.
 
 ## Infrastructure (DevOps)
-<<Falta validar scripts finales de provisioning para CI/CD>>
-<<Podemos agregar reglas definitivas de branching y protección de ramas>>
 
 ### CI/CD orchestration tool
 - Standard tool: **GitHub Actions** (single CI/CD control plane from this monorepo).
@@ -1567,7 +1564,7 @@ With the most recent official SLA (April 8, 2026) for your stack:
 | API App Service | CPU > 70% for 10 min OR memory > 75% for 10 min OR API P95 latency > 800 ms for 10 min | CPU < 40% AND memory < 55% AND P95 latency < 400 ms for 30 min | 2 | 6 | 10 min |
 | Document Azure Functions | Queue depth > 100 messages OR oldest message age > 60 s | Queue depth < 20 messages AND oldest message age < 15 s for 15 min | 1 | 10 | 5 min |
 
-If the API reaches 6 instances and P95 stays above 1.5 s for 15 min, scale the App Service Plan from B1 to P1v3. <<Validate P1v3 budget with professor>>
+If the API reaches 6 instances and P95 stays above 1.5 s for 15 min, scale the App Service Plan from B1 to P1v3.
 
 ### Stateless API
 
@@ -3115,7 +3112,6 @@ flowchart TD
   - [`server/QuietWealth.Backend/domains/document-intake/`](/server/QuietWealth.Backend/domains/document-intake)
   - [`server/QuietWealth.Backend/domains/retention-archival/`](/server/QuietWealth.Backend/domains/retention-archival)
   - [`server/QuietWealth.Backend/domains/audit-observability/`](/server/QuietWealth.Backend/domains/audit-observability)
-  - <<Agregar otros dominios si se implementan>>
 
 ### ACL policy for cross-domain communication
 - All cross-domain calls must go through the ACL layer in [`server/QuietWealth.Backend/acls/`](/server/QuietWealth.Backend/acls).
@@ -3125,7 +3121,6 @@ flowchart TD
   - `document-intake-to-certification-validation`
   - `certification-validation-to-marketplace`
   - `all-domains-to-audit-observability`
-  - <<Agregar otros ACLs si aparecen dependencias cross-domain>>
 
 ### Scaffold acceptance criteria
 - Solution compiles successfully with empty/stub implementations.
@@ -4458,7 +4453,6 @@ Expected integration characteristics:
 - Average authentication response time: 1–5 seconds
 - JWT payload size: below 10 KB
 - Support for thousands of concurrent authentication requests
-- Expected daily users for MVP validation: XXX
 
 Potential bottleneck:
 Large concurrent login spikes during business hours for SME users accessing financial trust records.
