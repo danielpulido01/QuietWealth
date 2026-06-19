@@ -1221,7 +1221,7 @@ src/
 - Data retention and archiving:
   - Production operational data and generated files remain in the active production environment for 90 days
   - After 90 days, records and generated artifacts are moved to an archive tier for audit and traceability purposes
-  - Archived data is retained according to institutional or customs compliance requirements
+  - Archived data is retained according to financial compliance requirements
 
 ## Observability
 - Telemetry platform: Azure Application Insights, aligned with the frontend for unified end-to-end telemetry
