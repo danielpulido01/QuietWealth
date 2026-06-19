@@ -493,32 +493,130 @@ Developers must:
 | Desktop | 3-column grid | Full dual panel | Full sidebar |
 
 ### 1.3.8 Testing Requirements for Components
-Each component must include tests. Verification command: `cd app && npm run test:ci`
+Each component or testable frontend module must include automated tests.
 
-#### [Unit tests](/app/__tests__/unit)(Jest)
+Verification commands:
+- `cd app && npm run test` runs the Jest unit suite without coverage.
+- `cd app && npm run test:ci` runs the Jest unit suite with the CI coverage gate from [jest.config](/app/jest.config.ts).
+- `cd app && npm run test:e2e` [Unit tests](/app/__tests__/e2e).
+
+
+#### [Unit tests](/app/__tests__/unit) (Jest)
 | Folder | Covers |
 |---|---|
-| `app/__tests__/unit/auth/` | `AuthFacade`, `authService`, guards, permission helpers |
-| `app/__tests__/unit/polling/` | `PollingOrchestrator` transitions, both strategies, terminal states |
-| `app/__tests__/unit/services/` | Services with a mocked `HttpClientFacade` |
+| `app/__tests__/unit/auth/` | `AuthProvider`, `AuthFacade`, `authService`, guards, permission helpers |
+| `app/__tests__/unit/polling/` | `PollingOrchestrator` placeholder coverage to expand once polling modules exist |
+| `app/__tests__/unit/services/` | Services and helpers with mocked `HttpClientFacade` or `axios` boundaries |
 | `app/__tests__/unit/validation/` | Zod schemas — valid payloads pass, invalid ones fail with the expected shape |
 
-Statement coverage holds at or above 80% on `app/auth/**`, `app/polling/**`, `app/services/**`, and `app/validation/**`, enforced as a CI gate.
-
-Example tests:
-- Button renders correctly
-- Button shows loading state
-- Button triggers click handler
+Real examples for how to build these tests live in [`app/TESTING.md`](/app/TESTING.md), including:
+- router-aware guard tests with `MemoryRouter`
+- service tests with mocked HTTP responses
+- Zod schema tests that assert `flatten().fieldErrors`
+- component test templates for render, loading, and click behavior
 
 #### [Integration tests](/app/__tests__/e2e) (Playwright)
 
-Required flows:
+Minimum required flows:
 | Flow | File |
 |---|---|
-| Login | `login.spec.ts` |
-| Marketplace | `marketplace.spec.ts` |
-| Document upload | `document-upload.spec.ts` |
-| Expert validation | `expert-validation.spec.ts` |
+| Login | [login.spec.ts](/app/__tests__/e2e/login.spec.ts) |
+| Marketplace | [marketplace.spec.ts](/app/__tests__/e2e/marketplace.spec.ts) |
+| Document upload | [document-upload.spec.ts](/app/__tests__/e2e/document-upload.spec.ts) |
+| Expert validation | [expert-validation.spec.ts](/app/__tests__/e2e/expert-validation.spec.ts) |
+
+
+The current files in `__tests__/e2e` are scaffolds with `test.describe.skip(...)`. Replace the placeholder body with a real flow when the screen exists.
+
+Before writing a flow:
+
+1. Start the app with a stable base URL.
+2. Seed or mock the backend response required for the journey.
+3. Use stable selectors such as `data-testid`.
+4. Assert both user-visible UI and route transitions.
+
+[Login](/app/__tests__/e2e/login.spec.ts):
+
+```ts
+import { expect, test } from "@playwright/test";
+
+test("authenticates a user and lands on the home route", async ({ page }) => {
+  await page.route("**/api/auth/login", async (route) => {
+    await route.fulfill({ status: 204, body: "" });
+  });
+
+  await page.route("**/api/auth/me", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        userId: "user-1",
+        email: "user@example.com",
+        tenantIds: [],
+        tenantRoles: [],
+      }),
+    });
+  });
+
+  await page.goto("/login");
+  await page.getByTestId("login-email").fill("user@example.com");
+  await page.getByTestId("login-password").fill("secret");
+  await page.getByRole("button", { name: "Sign in" }).click();
+
+  await expect(page).toHaveURL(/\/home$/);
+  await expect(page.getByText("user@example.com")).toBeVisible();
+});
+```
+
+#### [Component tests](/app/__tests__/unit/components)
+
+When a component is added, create the test in [components](/app/__tests__/unit/components) and follow the same Jest setup already used in this repo.
+
+Example:
+
+```tsx
+import { jest } from "@jest/globals";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { Button } from "../../../src/components/primitives/Button";
+
+describe("Button", () => {
+  it("renders its label", () => {
+    render(<Button>Save</Button>);
+    expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
+  });
+
+  it("shows the loading state", () => {
+    render(<Button loading>Save</Button>);
+    expect(screen.getByRole("button")).toBeDisabled();
+    expect(screen.getByText("Loading...")).toBeInTheDocument();
+  });
+
+  it("triggers the click handler", async () => {
+    const user = userEvent.setup();
+    const onClick = jest.fn();
+
+    render(<Button onClick={onClick}>Save</Button>);
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+});
+```
+
+Prefer:
+- `getByRole` over brittle CSS selectors
+- `userEvent` over manual DOM event dispatch
+- visible behavior over implementation details
+
+
+#### Checklist For New Tests
+
+- Put the test beside the correct layer under `__tests__/unit` or `__tests__/e2e`.
+- Mock external boundaries such as HTTP, auth, router state, browser location, and time.
+- Add one happy-path assertion and at least one failure-path assertion.
+- Use stable selectors and visible behavior.
+- Run the narrowest command first, then `npm run test:ci` before merging Jest changes.
 
 ### 1.3.9 Performance Guidelines
 Developers must:
@@ -4421,4 +4519,3 @@ https://datatracker.ietf.org/doc/html/rfc6749
 
 - Microsoft Entra ID Documentation  
 https://learn.microsoft.com/en-us/entra/
-
