@@ -212,7 +212,7 @@ Evaluate user ability to:
 The frontend follows an atomic design for component architecture.
 
 ### 1.3.2 Component Hierarchy
-[Components](/app/src/components)
+[Components](app/src/components)
 
 Current component implementation uses 5 atomic UI layers plus shared support modules:
 ```
@@ -230,7 +230,7 @@ app/
 
 ### 1.3.3 Component Categories
 
-#### [Atoms](/app/src/components/atoms)
+#### [Atoms](app/src/components/atoms)
 Reusable low-level UI components (no business logic)
 
 - Must be pure UI
@@ -258,7 +258,7 @@ Example usage:
 </Button>
 ```
 
-#### [Molecules](/app/src/components/molecules)
+#### [Molecules](app/src/components/molecules)
 Built from primitives
 
 - Combine primitives
@@ -283,7 +283,7 @@ SMECard
  └ Button
 ```
 
-#### [Organisms](/app/src/components/organisms)
+#### `Organisms`
 Components responsible for larger layout composition and section structure.
 
 - Must not contain business logic
@@ -306,7 +306,7 @@ InvestmentDetailPanel
  └ MaskedValue
 ```
 
-#### [Templates](/app/src/components/templates)
+#### [Templates](app/src/components/templates)
 Layout shells
 
 - Wrap authenticated and public route layouts
@@ -317,7 +317,7 @@ AuthenticatedLayout
 PublicLayout
 ```
 
-#### [Pages](/app/src/components/pages)
+#### [Pages](app/src/components/pages)
 Feature-specific components tied to a business process.
 
 - Coordinate business logic through hooks, which interact with services
@@ -336,8 +336,8 @@ ExpertValidationPage
 ### 1.3.4 Component Reuse Strategy
 
 Before creating a new component, developers must:
-1. Search in [Atoms](/app/src/components/atoms)
-2. Search in [Molecules](/app/src/components/molecules)
+1. Search in [Atoms](app/src/components/atoms)
+2. Search in [Molecules](app/src/components/molecules)
 
 If a similar component exists, extend it by adding props, variants, or composition instead of duplicating code.
 
@@ -349,7 +349,7 @@ Components must be configurable using props instead of duplication.
 <Button variant="danger" />
 ```
 
-#### [Hooks](/app/src/components/hooks)
+#### [Hooks](app/src/components/hooks)
 Components use hooks for business logic.
 
 Example:
@@ -366,7 +366,7 @@ usePolicies()
 useSession()
 ```
 
-Hooks use [Services](/app/src/services), [Auth](/app/src/auth/AuthFacade.ts), and [State](/app/src/state) for orchestration:
+Hooks use [Services](app/src/services), [Auth](app/src/auth/AuthFacade.ts), and [State](app/src/state) for orchestration:
 
 Example:
 ```
@@ -374,8 +374,8 @@ applicationFacade.ts
 CertificationPollingManager.ts
 ```
 
-### 1.3.5 [Styles](/app/src/components/styles)
-All visual styles must be centralized using design tokens in [tokens.ts](/app/src/components/styles/tokens.ts)
+### 1.3.5 [Styles](app/src/components/styles)
+All visual styles must be centralized using design tokens in [tokens.ts](app/src/components/styles/tokens.ts)
 
 Example:
 ```TypeScript
@@ -403,7 +403,7 @@ export const radius = {
 }
 ```
 
-#### [Theme](/app/src/components/styles/theme.ts)
+#### [Theme](app/src/components/styles/theme.ts)
 How do I switch dark/light mode? How do I add a new theme?
 
 Example:
@@ -440,10 +440,10 @@ Certification status is communicated with both a color and a text label, never c
 ### 1.3.6 Internationalization Strategy
 All text must be externalized.
 
-#### [i18n](/app/src/components/i18n)
+#### [i18n](app/src/components/i18n)
 Insert new languages in this folder:
-- [es](/app/src/components/i18n/es.json)
-- [en](/app/src/components/i18n/en.json)
+- [es](app/src/components/i18n/es.json)
+- [en](app/src/components/i18n/en.json)
 
 Example:
 ```JSON
@@ -477,7 +477,7 @@ const { t } = useTranslation()
 ```
 
 ### 1.3.7 Responsiveness Strategy
-Responsiveness must be centralized using breakpoint tokens in [breakpoints.ts](/app/src/components/styles/breakpoints.ts)
+Responsiveness must be centralized using breakpoint tokens in [breakpoints.ts](app/src/components/styles/breakpoints.ts)
 
 Example:
 ```TypeScript
@@ -601,7 +601,7 @@ Access tokens stay in memory (Redux); the refresh token sits in an `HttpOnly`, `
 ### 1.4.3 Authorization
 
 #### 1.4.3.1 Roles
-Roles are found in [roles.ts](/app/src/auth/policies/roles.ts)
+Roles are found in [roles.ts](app/src/auth/policies/roles.ts)
 
 | Code | Description |
 |---|---|
@@ -611,7 +611,7 @@ Roles are found in [roles.ts](/app/src/auth/policies/roles.ts)
 | `sys_admin` | Full access to the platform, including user, role, and audit administration |
 
 #### 1.4.3.2 Permissions
-Permissions are found in [permissions.ts](/app/src/auth/policies/permissions.ts)
+Permissions are found in [permissions.ts](app/src/auth/policies/permissions.ts)
 
 **Permission Catalog**
 | Code | Description |
@@ -626,7 +626,7 @@ Permissions are found in [permissions.ts](/app/src/auth/policies/permissions.ts)
 | `audit_log.read` | Admin can view the full system audit log |
 
 #### 1.4.3.3 Role-Permission Mapping
-Role to permissions mapping is found in [rolePermissions.ts](/app/src/auth/policies/rolePermissions.ts)
+Role to permissions mapping is found in [rolePermissions.ts](app/src/auth/policies/rolePermissions.ts)
 
 | Role | Permissions |
 |---|---|
@@ -636,7 +636,7 @@ Role to permissions mapping is found in [rolePermissions.ts](/app/src/auth/polic
 | `sys_admin` | All permissions |
 
 #### 1.4.3.4 Access Policies
-Access Policies are found in [accessPolicy.ts](/app/src/auth/policies/accessPolicy.ts)
+Access Policies are found in [accessPolicy.ts](app/src/auth/policies/accessPolicy.ts)
 
 | Policy | Required Permissions | Description |
 |---|---|---|
@@ -652,7 +652,7 @@ Access Policies are found in [accessPolicy.ts](/app/src/auth/policies/accessPoli
 #### 1.4.3.5 Routing Protection
 This project has three methods of routing protection.
 
-**[AuthGuard.tsx](/app/src/auth/guards/AuthGuard.tsx)**
+**[AuthGuard.tsx](app/src/auth/guards/AuthGuard.tsx)**
 
 Use this guard to prevent unauthenticated access to specific routes.
 
@@ -665,7 +665,7 @@ Example usage:
 </AuthGuard>
 ```
 
-**[GuestGuard.tsx](/app/src/auth/guards/GuestGuard.tsx)**
+**[GuestGuard.tsx](app/src/auth/guards/GuestGuard.tsx)**
 
 Use this guard to prevent authenticated users accessing unauthenticated sites.
 
@@ -676,7 +676,7 @@ Example usage:
 </GuestGuard>
 ```
 
-**[PolicyGuard.tsx](/app/src/auth/guards/PolicyGuard.tsx)**
+**[PolicyGuard.tsx](app/src/auth/guards/PolicyGuard.tsx)**
 
 Use this guard when an entire route or page requires a specific access policy.
 
@@ -709,17 +709,17 @@ const { hasAccess } = usePolicies();
 
 **To add additional roles/permissions:**
 
-1. Add role definition in [roles.ts](/app/src/auth/policies/roles.ts)
-2. Add permission in [permissions.ts](/app/src/auth/policies/permissions.ts)
-3. Map policy to permissions in [accessPolicy.ts](/app/src/auth/policies/accessPolicy.ts)
+1. Add role definition in [roles.ts](app/src/auth/policies/roles.ts)
+2. Add permission in [permissions.ts](app/src/auth/policies/permissions.ts)
+3. Map policy to permissions in [accessPolicy.ts](app/src/auth/policies/accessPolicy.ts)
 
 ### 1.4.4 API Communication
 
 #### Centralized API Client
-[client.ts](/app/src/services/client.ts)
+[client.ts](app/src/services/client.ts)
 
 #### HTTP Interceptors
-[httpInterceptors.ts](/app/src/services/httpInterceptors.ts)
+[httpInterceptors.ts](app/src/services/httpInterceptors.ts)
 
 ### 1.4.5 Storage Rules
 
@@ -752,7 +752,7 @@ Responsibilities:
 - Clear in-memory session data
 - Redirect to login
 
-[AuthProvider.tsx](/app/src/auth/AuthProvider.tsx)
+[AuthProvider.tsx](app/src/auth/AuthProvider.tsx)
 
 ### 1.4.7 Session Expiration
 
@@ -809,11 +809,11 @@ The frontend uses a five-layer architecture with clear responsibilities and down
 
 ### Singleton
 The following classes currently use the singleton pattern:
-- [logger.ts](/app/src/utils/logger.ts) — `Logger`
-- [error-handler.ts](/app/src/utils/error-handler.ts) — `ExceptionHandler`
-- [AuthFacade.ts](/app/src/auth/AuthFacade.ts) — `AuthFacade`
-- [sessionManager.ts](/app/src/state/sessionManager.ts) — `SessionManager`
-- [applicationFacade.ts](/app/src/services/applicationFacade.ts) — `ApplicationServiceFacade`
+- [logger.ts](app/src/utils/logger.ts) — `Logger`
+- [error-handler.ts](app/src/utils/error-handler.ts) — `ExceptionHandler`
+- [AuthFacade.ts](app/src/auth/AuthFacade.ts) — `AuthFacade`
+- [sessionManager.ts](app/src/state/sessionManager.ts) — `SessionManager`
+- [applicationFacade.ts](app/src/services/applicationFacade.ts) — `ApplicationServiceFacade`
 
 #### When to apply here
 Apply only if all are true:
@@ -907,9 +907,9 @@ class XStore {
 ```
 
 ### Proxy — Auth Middleware
-- [AuthFacade.ts](/app/src/auth/AuthFacade.ts)
-- [httpInterceptors.ts](/app/src/services/httpInterceptors.ts)
-- [client.ts](/app/src/services/client.ts)
+- [AuthFacade.ts](app/src/auth/AuthFacade.ts)
+- [httpInterceptors.ts](app/src/services/httpInterceptors.ts)
+- [client.ts](app/src/services/client.ts)
 
 `httpInterceptors.ts` sits between services and the raw HTTP client, attaching auth context and handling 401 cases. Services call `HttpClientFacade` and never attach tokens themselves.
 
@@ -926,10 +926,10 @@ class AuthMiddleware {
 Expose a single service access surface for hooks while keeping auth and HTTP implementation details behind facades.
 
 #### Files to keep aligned
-- [client.ts](/app/src/services/client.ts)
-- [AuthFacade.ts](/app/src/auth/AuthFacade.ts)
-- [applicationFacade.ts](/app/src/services/applicationFacade.ts)
-- [useApplicationServices.ts](/app/src/components/hooks/useApplicationServices.ts)
+- [client.ts](app/src/services/client.ts)
+- [AuthFacade.ts](app/src/auth/AuthFacade.ts)
+- [applicationFacade.ts](app/src/services/applicationFacade.ts)
+- [useApplicationServices.ts](app/src/components/hooks/useApplicationServices.ts)
 
 #### Contracts
 
@@ -1540,9 +1540,9 @@ Developers must create and maintain the following backend [test projects](server
 | [UnitTests](server/tests/QuietWealth.Backend.UnitTests) | Domain models, domain services, validators, mappers, ACL translators in isolation | Real HTTP, real SQL, real Azure SDK calls |
 | [IntegrationTests](server/tests/QuietWealth.Backend.IntegrationTests) | Repository implementations, SQL access, outbox persistence, Azure adapter wiring, health-check registrations | Full browser flows or UI concerns |
 | [ApiTests](server/tests/QuietWealth.Backend.ApiTests) | Controllers, filters, auth policies, model validation, middleware, response contracts, health endpoints | Direct repository internals |
-| [ContractTests](server/tests/QuietWealth.Backend.ContractTests) |  [Anti-Corruption Layer](server/QuietWealth.Backend/acls) contracts | Controller routing or UI behavior |
+| [ContractTests](server/tests/QuietWealth.Backend.ContractTests) |  `Anti-Corruption Layer` contracts | Controller routing or UI behavior |
 
-[Common](server/tests/Common) may be added for shared fixtures, test data builders, fake JWT generation, and container bootstrapping, but assertions must remain in the owning test project.
+`Common` may be added for shared fixtures, test data builders, fake JWT generation, and container bootstrapping, but assertions must remain in the owning test project.
 
 ### 1. [Unit testing strategy](server/tests/QuietWealth.Backend.UnitTests)
 
@@ -1931,7 +1931,7 @@ Use `AddHealthChecks()` during service registration in the future `server/QuietW
 
 Example registration:
 
-[Program.cs](/server/QuietWealth.Backend/Program.cs)
+[Program.cs](server/QuietWealth.Backend/Program.cs)
 ```csharp
 using QuietWealth.Bakend.Shared.Configuration;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -2023,7 +2023,7 @@ public async Task Liveness_endpoint_returns_ok_when_process_is_running()
 Contract testing belongs at the Anti-Corruption Layer. Prove external payloads, provider schemas, and cross-context translations are normalized before entering the domain model.
 
 Scope:
-- All code under [acls](server/QuietWealth.Backend/acls)
+- All code under `acls`
 - External HTTP provider payloads consumed by the backend
 - Queue, Event Grid, and outbox message payloads crossing bounded contexts
 - Any adapter translating Auth0, Microsoft Entra ID, Blob metadata, or future marketplace/certification provider payloads
@@ -2090,7 +2090,7 @@ Developers may exclude generated OpenAPI files, DTOs that only carry data, and t
 2. Auth0 completes the Authorization Code + PKCE flow and returns tokens to the configured QuietWealth callback.
 3. The frontend sends the Auth0 access token as a Bearer token to protected backend endpoints.
 4. `IdentityAccessService` validates issuer, audience, signature, expiration, roles, permissions, and session state.
-5. The backend creates or refreshes session metadata through [`IUserSessionRepository`](/server/QuietWealth.Backend/domains/identity-access/repositories/IUserSessionRepository.cs).
+5. The backend creates or refreshes session metadata through [`IUserSessionRepository`](server/QuietWealth.Backend/domains/identity-access/repositories/IUserSessionRepository.cs).
 6. Protected endpoints validate the JWT and permission policies before running business logic.
 7. Logout clears the local session, delegates logout to Auth0, and emits `UserLoggedOut`.
 
@@ -2099,7 +2099,7 @@ Errors: `401 Unauthorized` for invalid or expired tokens, `403 Forbidden` for mi
 ---
 
 ### SME document intake
-1. React requests upload permission from [`DocumentIntakeController`](/server/QuietWealth.Backend/domains/document-intake/controllers/DocumentIntakeController.cs).
+1. React requests upload permission from [`DocumentIntakeController`](server/QuietWealth.Backend/domains/document-intake/controllers/DocumentIntakeController.cs).
 2. The .NET backend validates the user, checks `files.upload`, creates `DocumentBatch` / `SourceDocument` metadata, and generates a short-lived SAS upload URL.
 3. React uploads the file directly to the Azure Blob Storage container using the SAS URL.
 4. Azure Blob Storage emits a file-created event after the blob is written.
@@ -2160,7 +2160,7 @@ Errors: `404 Not Found` for missing or non-visible SMEs, `403 Forbidden` for res
 ### Audit and observability event capture
 1. Domain services emit events for meaningful business transitions.
 2. Events include correlation id, actor id, timestamp, event type, aggregate id, and safe metadata.
-3. Audit entries are saved through [`IAuditEntryRepository`](/server/QuietWealth.Backend/domains/audit-observability/repositories/IAuditEntryRepository.cs) in the same transaction as the business state change.
+3. Audit entries are saved through [`IAuditEntryRepository`](server/QuietWealth.Backend/domains/audit-observability/repositories/IAuditEntryRepository.cs) in the same transaction as the business state change.
 4. A matching `OutboxMessage` is inserted into `outbox_messages` with `status = Pending`, `retry_count = 0`, aggregate reference, payload JSON, and correlation id.
 5. An outbox publisher worker reads `Pending` or retryable `Failed` messages, sends logs/traces to Azure Application Insights, and marks successful messages as `Published`.
 6. If publishing fails and retries remain, the worker updates `failure_reason` and `last_attempted_at_utc`, increments `retry_count`, and marks the message as `Failed`.
@@ -2174,7 +2174,7 @@ Errors: audit persistence failures fail the current transaction; telemetry publi
 ### Data retention and archival
 1. Blob artifacts already stored in Azure Blob Storage are governed by Azure Blob Lifecycle Management.
 2. Blob lifecycle rules move eligible files automatically from Hot to Cool, Cold, or Archive tier based on retention age and policy.
-3. Old structured records in Azure SQL are identified using [`RetentionPolicyOptions`](/server/QuietWealth.Backend/shared/Configuration/RetentionPolicyOptions.cs).
+3. Old structured records in Azure SQL are identified using [`RetentionPolicyOptions`](server/QuietWealth.Backend/shared/Configuration/RetentionPolicyOptions.cs).
 4. A scheduled Azure Function export process moves eligible SQL data to archive files in Azure Blob Storage.
 5. After SQL data is exported, Blob Lifecycle Management moves those archived files to the Archive tier.
 6. Archive metadata stores status, location, timestamp, retention category, and legal-hold state.
@@ -2402,13 +2402,13 @@ flowchart TD
 - Methods may be created as stubs (`throw new NotImplementedException()` or equivalent) until implementation phase.
 
 ### Monorepo target structure (backend, domain-first)
-- Backend root: [`server/`](/server)
-- Source root: [`server/src/`](/server/QuietWealth.Backend)
-- Domain modules root: [`server/QuietWealth.Backend/domains/`](/server/QuietWealth.Backend/domains)
-- Cross-domain ACL root: [`server/QuietWealth.Backend/acls/`](/server/QuietWealth.Backend/acls)
-- Shared kernel root: [`server/QuietWealth.Backend/shared/`](/server/QuietWealth.Backend/shared)
-- Tests root: [`server/tests/`](/server/tests)
-- Deployment/IaC root: [`server/deploy/`](/server/deploy)
+- Backend root: [`server/`](server)
+- Source root: [`server/src/`](server/QuietWealth.Backend)
+- Domain modules root: [`server/QuietWealth.Backend/domains/`](server/QuietWealth.Backend/domains)
+- Cross-domain ACL root: `server/QuietWealth.Backend/acls/`
+- Shared kernel root: [`server/QuietWealth.Backend/shared/`](server/QuietWealth.Backend/shared)
+- Tests root: [`server/tests/`](server/tests)
+- Deployment/IaC root: `server/deploy/`
 
 ### Required structure inside each domain module
 - For every domain folder under `domains/<domain-name>/`, scaffold exactly these subfolders:
@@ -2417,14 +2417,14 @@ flowchart TD
   - `repositories/`
   - `services/`
 - Example domains to scaffold first:
-  - [`server/QuietWealth.Backend/domains/identity-access/`](/server/QuietWealth.Backend/domains/identity-access)
-  - [`server/QuietWealth.Backend/domains/document-intake/`](/server/QuietWealth.Backend/domains/document-intake)
-  - [`server/QuietWealth.Backend/domains/retention-archival/`](/server/QuietWealth.Backend/domains/retention-archival)
-  - [`server/QuietWealth.Backend/domains/audit-observability/`](/server/QuietWealth.Backend/domains/audit-observability)
+  - [`server/QuietWealth.Backend/domains/identity-access/`](server/QuietWealth.Backend/domains/identity-access)
+  - [`server/QuietWealth.Backend/domains/document-intake/`](server/QuietWealth.Backend/domains/document-intake)
+  - [`server/QuietWealth.Backend/domains/retention-archival/`](server/QuietWealth.Backend/domains/retention-archival)
+  - [`server/QuietWealth.Backend/domains/audit-observability/`](server/QuietWealth.Backend/domains/audit-observability)
   - <<Agregar otros dominios si se implementan>>
 
 ### ACL policy for cross-domain communication
-- All cross-domain calls must go through the ACL layer in [`server/QuietWealth.Backend/acls/`](/server/QuietWealth.Backend/acls).
+- All cross-domain calls must go through the ACL layer in `server/QuietWealth.Backend/acls/`.
 - No domain is allowed to reference another domain's `repositories/` or `services/` directly.
 - ACLs must expose explicit translator/adaptor contracts between domains (anti-corruption boundary).
 - Suggested ACL modules:
@@ -2445,16 +2445,16 @@ flowchart TD
 #### 1. Repository Pattern
 
 The following backend artifacts use the repository pattern:
-- [domains/identity-access/repositories/](/server/QuietWealth.Backend/domains/identity-access/repositories/)
+- [domains/identity-access/repositories/](server/QuietWealth.Backend/domains/identity-access/repositories/)
   - `IUserSessionRepository`
-- [domains/document-intake/repositories/](/server/QuietWealth.Backend/domains/document-intake/repositories/)
+- [domains/document-intake/repositories/](server/QuietWealth.Backend/domains/document-intake/repositories/)
   - `IDocumentBatchRepository`
   - `ISourceDocumentRepository`
-- [domains/audit-observability/repositories/](/server/QuietWealth.Backend/domains/audit-observability/repositories/)
+- [domains/audit-observability/repositories/](server/QuietWealth.Backend/domains/audit-observability/repositories/)
   - `IAuditEntryRepository`
-- [domains/retention-archival/repositories/](/server/QuietWealth.Backend/domains/retention-archival/repositories/)
+- [domains/retention-archival/repositories/](server/QuietWealth.Backend/domains/retention-archival/repositories/)
   - `IRetentionRecordRepository`
-- [domains/marketplace/repositories/](/server/QuietWealth.Backend/domains/marketplace/repositories/)
+- `domains/marketplace/repositories/`
   - `IMarketplaceListingRepository`
 
 ##### When to apply here
@@ -2511,7 +2511,7 @@ Expected: domain services depend on repository interfaces, not direct SQL or inf
 #### 2. Adapter Pattern
 
 The following backend artifacts use the adapter pattern:
-- [shared/infrastructure/adapters/](/server/QuietWealth.Backend/shared/infrastructure/adapters/)
+- `shared/infrastructure/adapters/`
   - `AzureBlobStorageAdapter`
   - `AzureNotificationHubAdapter`
   - `AzureApplicationInsightsAdapter`
@@ -2575,11 +2575,11 @@ Expected: vendor SDK references stay outside domain services.
 #### 3. Facade Pattern
 
 The following backend artifacts use the facade pattern:
-- [domains/identity-access/services/](/server/QuietWealth.Backend/domains/identity-access/services/)
+- [domains/identity-access/services/](server/QuietWealth.Backend/domains/identity-access/services/)
   - `IdentityAccessFacade`
-- [domains/document-intake/services/](/server/QuietWealth.Backend/domains/document-intake/services/)
+- [domains/document-intake/services/](server/QuietWealth.Backend/domains/document-intake/services/)
   - `DocumentUploadFacade`
-- [domains/audit-observability/services/](/server/QuietWealth.Backend/domains/audit-observability/services/)
+- [domains/audit-observability/services/](server/QuietWealth.Backend/domains/audit-observability/services/)
   - `NotificationFacade`
 
 ##### When to apply here
@@ -2650,12 +2650,12 @@ Expected: controllers call facades or services and do not coordinate provider-sp
 #### 4. DTO Pattern
 
 The following backend artifacts use the DTO pattern:
-- [domains/document-intake/controllers/](/server/QuietWealth.Backend/domains/document-intake/controllers/)
+- [domains/document-intake/controllers/](server/QuietWealth.Backend/domains/document-intake/controllers/)
   - `CreateDocumentBatchRequestDto`
   - `UploadPermissionDto`
-- [domains/certification-validation/controllers/](/server/QuietWealth.Backend/domains/certification-validation/controllers/)
+- `domains/certification-validation/controllers/`
   - `CertificationDecisionRequestDto`
-- [domains/marketplace/controllers/](/server/QuietWealth.Backend/domains/marketplace/controllers/)
+- `domains/marketplace/controllers/`
   - `MarketplaceListingResponseDto`
 
 ##### When to apply here
@@ -2709,9 +2709,9 @@ Expected: controllers expose DTOs and do not return domain entities directly.
 #### 5. Outbox Pattern
 
 The following backend artifacts use the outbox pattern:
-- [shared/Infrastructure/OutboxMessage.cs](/server/QuietWealth.Backend/shared/Infrastructure/OutboxMessage.cs)
+- [shared/Infrastructure/OutboxMessage.cs](server/QuietWealth.Backend/shared/Infrastructure/OutboxMessage.cs)
   - `OutboxMessage`
-- [shared/infrastructure/outbox/](/server/QuietWealth.Backend/shared/infrastructure/outbox/)
+- `shared/infrastructure/outbox/`
   - `IOutboxRepository`
   - `OutboxPublisherWorker`
 
@@ -2770,15 +2770,15 @@ Expected: reliable side effects use `OutboxMessage`, not direct best-effort publ
 #### 6. Domain Events
 
 The following backend artifacts use domain events:
-- [domains/document-intake/models/](/server/QuietWealth.Backend/domains/document-intake/models/)
+- [domains/document-intake/models/](server/QuietWealth.Backend/domains/document-intake/models/)
   - `DocumentBatchCreated`
   - `SourceDocumentProcessed`
-- [domains/certification-validation/models/](/server/QuietWealth.Backend/domains/certification-validation/models/)
+- `domains/certification-validation/models/`
   - `CertificationApproved`
   - `CertificationRejected`
-- [domains/marketplace/models/](/server/QuietWealth.Backend/domains/marketplace/models/)
+- `domains/marketplace/models/`
   - `MarketplaceListingPublished`
-- [domains/retention-archival/models/](/server/QuietWealth.Backend/domains/retention-archival/models/)
+- [domains/retention-archival/models/](server/QuietWealth.Backend/domains/retention-archival/models/)
   - `RetentionRecordArchived`
 
 ##### When to apply here
@@ -2831,11 +2831,11 @@ Expected: events describe completed facts and do not perform side effects direct
 #### 7. Strategy Pattern
 
 The following backend artifacts use the strategy pattern:
-- [domains/document-intake/services/](/server/QuietWealth.Backend/domains/document-intake/services/)
+- [domains/document-intake/services/](server/QuietWealth.Backend/domains/document-intake/services/)
   - `IDocumentValidationStrategy`
-- [domains/certification-validation/services/](/server/QuietWealth.Backend/domains/certification-validation/services/)
+- `domains/certification-validation/services/`
   - `ICertificationScoringStrategy`
-- [domains/retention-archival/services/](/server/QuietWealth.Backend/domains/retention-archival/services/)
+- [domains/retention-archival/services/](server/QuietWealth.Backend/domains/retention-archival/services/)
   - `IRetentionPolicyStrategy`
 
 ##### When to apply here
@@ -2888,11 +2888,11 @@ Expected: rule variation is isolated in strategy classes, not duplicated across 
 #### 8. Middleware Pipeline Pattern
 
 The following backend artifacts use the middleware pipeline pattern:
-- [shared/middleware/](/server/QuietWealth.Backend/shared/middleware/)
+- `shared/middleware/`
   - `CorrelationIdMiddleware`
   - `ErrorHandlingMiddleware`
   - `RequestTelemetryMiddleware`
-- [Program.cs](/server/QuietWealth.Backend/Program.cs)
+- [Program.cs](server/QuietWealth.Backend/Program.cs)
   - Authentication middleware
   - Authorization policies
   - Health checks
@@ -2946,13 +2946,13 @@ Expected: cross-cutting HTTP concerns are centralized in the pipeline.
 #### 9. Read Model Pattern
 
 The following backend artifacts use the read model pattern:
-- [domains/marketplace/models/](/server/QuietWealth.Backend/domains/marketplace/models/)
+- `domains/marketplace/models/`
   - `MarketplaceListing`
   - `InvestmentMetric`
-- [domains/marketplace/services/](/server/QuietWealth.Backend/domains/marketplace/services/)
+- `domains/marketplace/services/`
   - `MarketplaceReadService`
   - `InvestmentDetailService`
-- [shared/infrastructure/adapters/](/server/QuietWealth.Backend/shared/infrastructure/adapters/)
+- `shared/infrastructure/adapters/`
   - `IMarketplaceCacheAdapter`
 
 ##### When to apply here
@@ -3003,11 +3003,11 @@ Expected: Redis usage remains limited to marketplace reads.
 #### 10. Anti-Corruption Layer
 
 The following backend artifacts use the anti-corruption layer pattern:
-- [acls/document-intake-to-certification-validation/](/server/QuietWealth.Backend/acls/document-intake-to-certification-validation/)
+- `acls/document-intake-to-certification-validation/`
   - `DocumentIntakeToCertificationValidationAcl`
-- [acls/certification-validation-to-marketplace/](/server/QuietWealth.Backend/acls/certification-validation-to-marketplace/)
+- `acls/certification-validation-to-marketplace/`
   - `CertificationValidationToMarketplaceAcl`
-- [acls/all-domains-to-audit-observability/](/server/QuietWealth.Backend/acls/all-domains-to-audit-observability/)
+- `acls/all-domains-to-audit-observability/`
   - `AuditObservabilityAcl`
 
 ##### When to apply here
@@ -3060,11 +3060,11 @@ Expected: cross-domain references go through `acls/`, not direct service or repo
 #### 11. State Pattern
 
 The following backend artifacts use the state pattern:
-- [domains/document-intake/models/](/server/QuietWealth.Backend/domains/document-intake/models/)
+- [domains/document-intake/models/](server/QuietWealth.Backend/domains/document-intake/models/)
   - `SourceDocument`
   - `DocumentBatch`
   - `IDocumentState`
-- [domains/retention-archival/models/](/server/QuietWealth.Backend/domains/retention-archival/models/)
+- [domains/retention-archival/models/](server/QuietWealth.Backend/domains/retention-archival/models/)
   - `RetentionRecord`
   - `RetentionLifecycleState`
 
@@ -3129,13 +3129,13 @@ Expected: lifecycle branching is centralized in state classes and domain models.
 #### 12. Chain of Responsibility Pattern
 
 The following backend artifacts use the chain of responsibility pattern:
-- [domains/document-intake/services/](/server/QuietWealth.Backend/domains/document-intake/services/)
+- [domains/document-intake/services/](server/QuietWealth.Backend/domains/document-intake/services/)
   - `IDocumentValidationHandler`
   - `FileTypeValidationHandler`
   - `DocumentSizeValidationHandler`
-- [domains/certification-validation/services/](/server/QuietWealth.Backend/domains/certification-validation/services/)
+- `domains/certification-validation/services/`
   - `CertificationEligibilityHandler`
-- [domains/retention-archival/services/](/server/QuietWealth.Backend/domains/retention-archival/services/)
+- [domains/retention-archival/services/](server/QuietWealth.Backend/domains/retention-archival/services/)
   - `RetentionEligibilityHandler`
 
 ##### When to apply here
@@ -3198,14 +3198,14 @@ Expected: validation pipelines are composed from focused handlers.
 #### 13. Command Pattern
 
 The following backend artifacts use the command pattern:
-- [domains/document-intake/services/](/server/QuietWealth.Backend/domains/document-intake/services/)
+- [domains/document-intake/services/](server/QuietWealth.Backend/domains/document-intake/services/)
   - `ProcessSourceDocumentCommand`
   - `ProcessSourceDocumentCommandHandler`
-- [domains/certification-validation/services/](/server/QuietWealth.Backend/domains/certification-validation/services/)
+- `domains/certification-validation/services/`
   - `PublishCertificationDecisionCommand`
-- [domains/retention-archival/services/](/server/QuietWealth.Backend/domains/retention-archival/services/)
+- [domains/retention-archival/services/](server/QuietWealth.Backend/domains/retention-archival/services/)
   - `ArchiveRetentionRecordCommand`
-- [shared/infrastructure/outbox/](/server/QuietWealth.Backend/shared/infrastructure/outbox/)
+- `shared/infrastructure/outbox/`
   - `OutboxPublisherWorker`
 
 ##### When to apply here
@@ -3364,17 +3364,17 @@ Azure Blob Storage is used only for file bytes and archived artifacts. SQL store
 ## Core entities
 | Entity | Purpose | Backend reference |
 |---|---|---|
-| `UserSession` | Stores active backend session metadata and authorization context. | [`UserSession.cs`](/server/QuietWealth.Backend/domains/identity-access/models/UserSession.cs) |
-| `AccessPolicy` | Defines permission requirements for protected backend actions. | [`AccessPolicy.cs`](/server/QuietWealth.Backend/domains/identity-access/models/AccessPolicy.cs) |
+| `UserSession` | Stores active backend session metadata and authorization context. | [`UserSession.cs`](server/QuietWealth.Backend/domains/identity-access/models/UserSession.cs) |
+| `AccessPolicy` | Defines permission requirements for protected backend actions. | [`AccessPolicy.cs`](server/QuietWealth.Backend/domains/identity-access/models/AccessPolicy.cs) |
 | `SMEProfile` | Represents the SME visible to experts and investors. | Planned marketplace/certification model |
-| `DocumentBatch` | Groups financial documents uploaded by an SME. | [`DocumentBatch.cs`](/server/QuietWealth.Backend/domains/document-intake/models/DocumentBatch.cs) |
-| `SourceDocument` | Stores metadata for each uploaded file. | [`SourceDocument.cs`](/server/QuietWealth.Backend/domains/document-intake/models/SourceDocument.cs) |
+| `DocumentBatch` | Groups financial documents uploaded by an SME. | [`DocumentBatch.cs`](server/QuietWealth.Backend/domains/document-intake/models/DocumentBatch.cs) |
+| `SourceDocument` | Stores metadata for each uploaded file. | [`SourceDocument.cs`](server/QuietWealth.Backend/domains/document-intake/models/SourceDocument.cs) |
 | `CertificationReview` | Records expert decisions and trust level assignment. | Planned certification model |
 | `MarketplaceListing` | Denormalized read model for certified SME cards and filtering. | Planned marketplace model |
 | `InvestmentMetric` | Stores financial and marketplace metrics over time for investment detail charts. | Planned marketplace model |
-| `AuditEntry` | Stores business and operational audit events. | [`AuditEntry.cs`](/server/QuietWealth.Backend/domains/audit-observability/models/AuditEntry.cs) |
-| `RetentionRecord` | Tracks active/archive lifecycle for files and records. | [`RetentionRecord.cs`](/server/QuietWealth.Backend/domains/retention-archival/models/RetentionRecord.cs) |
-| `OutboxMessage` | Stores pending domain events before asynchronous publication. | [`OutboxMessage.cs`](/server/QuietWealth.Backend/shared/Infrastructure/OutboxMessage.cs) |
+| `AuditEntry` | Stores business and operational audit events. | [`AuditEntry.cs`](server/QuietWealth.Backend/domains/audit-observability/models/AuditEntry.cs) |
+| `RetentionRecord` | Tracks active/archive lifecycle for files and records. | [`RetentionRecord.cs`](server/QuietWealth.Backend/domains/retention-archival/models/RetentionRecord.cs) |
+| `OutboxMessage` | Stores pending domain events before asynchronous publication. | [`OutboxMessage.cs`](server/QuietWealth.Backend/shared/Infrastructure/OutboxMessage.cs) |
 
 ## Entity relationship model
 ```mermaid
@@ -3951,3 +3951,4 @@ Docker, SQL Server, Azure, Auth0, and Microsoft Entra are not required for the l
    - `SME` — upload documents and create validation requests.
    - `Expert` — review requests and approve or reject certifications.
 5. To reset the demo data, stop and start the backend again.
+
