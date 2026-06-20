@@ -102,6 +102,12 @@ Lists certified SMEs with financial metrics and trust indicators.
 
 ![Marketplace](Media/marketPlace.png)
 
+### Ivestment Screen
+Investment page, where users choose an amount ($5K–$100K), select an investment type, and view the company's ISO 9001 certification and 32% expected annual ROI.
+
+![Investment01](Media/invest01.png)
+![Investment02](Media/invest02.png)
+
 #### Document Upload Screen
 Allows SMEs to submit financial documents for expert review.
 
