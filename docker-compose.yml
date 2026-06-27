@@ -1,0 +1,246 @@
+version: "3.9"
+
+# ==============================================================
+# QuietWealth – Development Plane Control
+# docker compose up -d
+# All services start, install their own dependencies, and expose
+# the /feature, /build-feature, /validate-feature, /release-feature
+# slash-commands through the orchestrator on port 4000.
+# ==============================================================
+
+networks:
+  devplane:
+    driver: bridge
+
+volumes:
+  sql_data:
+  redis_data:
+  azurite_data:
+  specs_volume:
+  agent_logs_volume:
+  git_workspace:
+
+services:
+
+  # ── Infrastructure ──────────────────────────────────────────
+
+  sql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: qw_sql
+    environment:
+      ACCEPT_EULA: "Y"
+      SA_PASSWORD: "QuietWealth_Test_123!"
+      MSSQL_PID: Developer
+    ports:
+      - "14333:1433"
+    volumes:
+      - sql_data:/var/opt/mssql
+    networks:
+      - devplane
+    healthcheck:
+      test: ["/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost", "-U", "sa",
+             "-P", "QuietWealth_Test_123!", "-C", "-Q", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: qw_redis
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - devplane
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 5
+
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    container_name: qw_azurite
+    ports:
+      - "10000:10000"
+      - "10001:10001"
+      - "10002:10002"
+    volumes:
+      - azurite_data:/data
+    networks:
+      - devplane
+    command: azurite --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0
+
+  # ── Backend (ASP.NET Core 9) ─────────────────────────────────
+
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: qw_backend
+    ports:
+      - "5000:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      AzureSql__ConnectionString: "Server=sql,1433;Database=QuietWealthTestDb;User Id=sa;Password=QuietWealth_Test_123!;TrustServerCertificate=True;Encrypt=False"
+      BlobStorage__ConnectionString: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OKWKmRxMrI9u6IH+iy8Ukg==;BlobEndpoint=http://azurite:10000/devstoreaccount1;"
+      Redis__ConnectionString: "redis:6379"
+    depends_on:
+      sql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      azurite:
+        condition: service_started
+    networks:
+      - devplane
+
+  # ── Frontend (React/Vite) ────────────────────────────────────
+
+  frontend:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: qw_frontend
+    ports:
+      - "3000:3000"
+    environment:
+      VITE_API_BASE_URL: "http://localhost:5000"
+    depends_on:
+      - backend
+    networks:
+      - devplane
+
+  # ── Spec Engine (Specification Agent) ───────────────────────
+
+  spec-engine:
+    build:
+      context: ./orchestrator
+      dockerfile: Dockerfile.agent
+      args:
+        SERVICE_NAME: spec-engine
+    container_name: qw_spec_engine
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      SERVICE_PORT: "4001"
+      SERVICE_NAME: "spec-engine"
+      PROJECT_CONTEXT: "/workspace"
+    volumes:
+      - specs_volume:/workspace/specs
+      - agent_logs_volume:/workspace/agent_logs
+      - git_workspace:/workspace/repo
+    networks:
+      - devplane
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4001/health"]
+      interval: 10s
+      retries: 5
+
+  # ── Build Engine (Code Generation Orchestrator) ──────────────
+
+  build-engine:
+    build:
+      context: ./orchestrator
+      dockerfile: Dockerfile.agent
+      args:
+        SERVICE_NAME: build-engine
+    container_name: qw_build_engine
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      SERVICE_PORT: "4002"
+      SERVICE_NAME: "build-engine"
+      PROJECT_CONTEXT: "/workspace"
+    volumes:
+      - specs_volume:/workspace/specs:ro
+      - agent_logs_volume:/workspace/agent_logs
+      - git_workspace:/workspace/repo
+    networks:
+      - devplane
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4002/health"]
+      interval: 10s
+      retries: 5
+
+  # ── Validate Engine (Validation + QA Agent) ──────────────────
+
+  validate-engine:
+    build:
+      context: ./orchestrator
+      dockerfile: Dockerfile.agent
+      args:
+        SERVICE_NAME: validate-engine
+    container_name: qw_validate_engine
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      SERVICE_PORT: "4003"
+      SERVICE_NAME: "validate-engine"
+      PROJECT_CONTEXT: "/workspace"
+    volumes:
+      - specs_volume:/workspace/specs:ro
+      - agent_logs_volume:/workspace/agent_logs
+      - git_workspace:/workspace/repo
+    networks:
+      - devplane
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4003/health"]
+      interval: 10s
+      retries: 5
+
+  # ── Release Engine (PR + CI Agent) ───────────────────────────
+
+  release-engine:
+    build:
+      context: ./orchestrator
+      dockerfile: Dockerfile.agent
+      args:
+        SERVICE_NAME: release-engine
+    container_name: qw_release_engine
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      SERVICE_PORT: "4004"
+      SERVICE_NAME: "release-engine"
+      PROJECT_CONTEXT: "/workspace"
+    volumes:
+      - specs_volume:/workspace/specs:ro
+      - agent_logs_volume:/workspace/agent_logs
+      - git_workspace:/workspace/repo
+    networks:
+      - devplane
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4004/health"]
+      interval: 10s
+      retries: 5
+
+  # ── Orchestrator (Command Gateway – main entry point) ────────
+
+  orchestrator:
+    build:
+      context: ./orchestrator
+      dockerfile: Dockerfile.orchestrator
+    container_name: qw_orchestrator
+    ports:
+      - "4000:4000"
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      SPEC_ENGINE_URL: "http://spec-engine:4001"
+      BUILD_ENGINE_URL: "http://build-engine:4002"
+      VALIDATE_ENGINE_URL: "http://validate-engine:4003"
+      RELEASE_ENGINE_URL: "http://release-engine:4004"
+      PROJECT_ROOT: "/workspace/repo"
+    volumes:
+      - specs_volume:/workspace/specs
+      - agent_logs_volume:/workspace/agent_logs
+      - git_workspace:/workspace/repo
+    depends_on:
+      spec-engine:
+        condition: service_healthy
+      build-engine:
+        condition: service_healthy
+      validate-engine:
+        condition: service_healthy
+      release-engine:
+        condition: service_healthy
+    networks:
+      - devplane
