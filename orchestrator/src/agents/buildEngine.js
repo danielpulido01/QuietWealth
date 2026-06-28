@@ -86,7 +86,11 @@ Use this format per file:
 <code>
 === END FILE ===
 `;
-  return askClaude(FRONTEND_SYSTEM, userMsg, 4096);
+  const raw = await askClaude(FRONTEND_SYSTEM, userMsg, 4096);
+  console.log("=== FRONTEND RAW OUTPUT ===");
+  console.log(raw.substring(0, 1000));
+  console.log("=== END RAW ===");
+  return raw;
 }
 
 async function generateDataCode(featureId, description, dataSpec) {
@@ -107,11 +111,28 @@ Generate SQL migration and EF Core entity files.
 
 function parseFiles(rawOutput) {
   const files = {};
-  const regex = /=== FILE: (.+?) ===([\s\S]*?)=== END FILE ===/g;
+  
+  // Try original format: === FILE: path ===
+  const regex1 = /=== FILE: (.+?) ===([\s\S]*?)=== END FILE ===/g;
   let match;
-  while ((match = regex.exec(rawOutput)) !== null) {
+  while ((match = regex1.exec(rawOutput)) !== null) {
     files[match[1].trim()] = match[2].trim();
   }
+  if (Object.keys(files).length > 0) return files;
+
+  // Fallback: ```language\n // filepath\n code ```
+  const regex2 = /```[\w]*\n\/\/ (.+?)\n([\s\S]*?)```/g;
+  while ((match = regex2.exec(rawOutput)) !== null) {
+    files[match[1].trim()] = match[2].trim();
+  }
+  if (Object.keys(files).length > 0) return files;
+
+  // Last resort: if Claude returned anything, store as single file
+  const cleaned = rawOutput.replace(/```[\w]*/g, "").replace(/```/g, "").trim();
+  if (cleaned.length > 100) {
+    files["generated/implementation.md"] = cleaned;
+  }
+
   return files;
 }
 
