@@ -1,0 +1,20 @@
+FROM node:22-alpine
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apk add --no-cache curl git bash
+
+# Auto-install Node dependencies on startup
+COPY orchestrator/package.json orchestrator/package-lock.json* ./
+RUN npm install --production
+
+COPY orchestrator/src/ ./src/
+COPY orchestrator/prompts/ ./prompts/
+
+EXPOSE 4000
+
+HEALTHCHECK --interval=10s --timeout=5s --retries=5 \
+  CMD curl -f http://localhost:4000/health || exit 1
+
+CMD ["node", "src/orchestrator.js"]
