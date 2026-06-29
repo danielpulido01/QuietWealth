@@ -6,46 +6,123 @@
 import { askClaude } from "../shared/claudeClient.js";
 import { loadSpecFile, appendLog } from "../shared/featureStore.js";
 
-const BACKEND_SYSTEM = `You are the Backend Agent for QuietWealth, an ASP.NET Core 9 (C#) API.
+const BACKEND_SYSTEM = `You are the Backend Agent for QuietWealth.
 
-Architecture: Domain-driven, Clean Architecture.
-- Each domain under: server/QuietWealth.Backend/domains/<domain-name>/
-  - controllers/<Name>Controller.cs
-  - models/<Request>.cs, <Response>.cs, <Entity>.cs
-  - services/I<Name>Service.cs, <Name>Service.cs
-  - repositories/I<Name>Repository.cs, <Name>Repository.cs
+REAL CODE PATTERNS TO FOLLOW EXACTLY:
 
-Follow existing patterns:
-- Controllers inherit from ControllerBase, use [ApiController], [Route("api/[controller]")]
-- Services receive repositories via DI, return typed results
-- Repositories use AzureSqlConnectionFactory for Dapper queries
-- Use ApiResponse<T> wrapper for all responses
-- Domain events implement IDomainEvent
-- Use AppException for business errors
+// Namespace: QuietWealth.Bakend (not Backend)
+// Controller pattern:
+[ApiController]
+[Route("api/<route>")]
+public sealed class <Name>Controller(<IService> service) : ControllerBase
+{
+    [HttpPost("action")]
+    [ProducesResponseType(typeof(ApiResponse<ResponseDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<ApiResponse<ResponseDto>>> ActionAsync(
+        [FromBody] RequestDto request, CancellationToken cancellationToken)
+    {
+        var result = await service.ActionAsync(request, cancellationToken);
+        var correlationId = HttpContext.Items[CorrelationIdMiddleware.HeaderName]?.ToString()
+            ?? HttpContext.TraceIdentifier;
+        return Ok(new ApiResponse<ResponseDto>(result, correlationId));
+    }
+}
 
-Generate production-ready C# code following these conventions.
-Return ONLY file paths and code, no explanations.`;
+// Service pattern:
+public sealed class <Name>Service(I<Name>Repository repository) : I<Name>Service
+{
+    public async Task<ResultDto> ActionAsync(RequestDto request, CancellationToken ct = default)
+    {
+        var result = await repository.GetAsync(request.Id, ct);
+        if (result is null) throw new DomainNotFoundException("Not found.", "domain.not_found");
+        return result;
+    }
+}
 
-const FRONTEND_SYSTEM = `You are the Frontend Agent for QuietWealth, a React 19 + TypeScript SPA.
+// Repository pattern:
+public sealed class <Name>Repository(IAzureSqlConnectionFactory sqlFactory) : I<Name>Repository
+{
+    public async Task<Entity?> GetAsync(Guid id, CancellationToken ct = default)
+    {
+        try
+        {
+            var conn = sqlFactory.GetConfiguredConnectionString();
+            // Dapper query here
+        }
+        catch (InfrastructureException) { throw; }
+        catch (Exception ex)
+        {
+            throw new InfrastructureException("Azure SQL unavailable.", "infrastructure.azure_sql_unavailable", true, ex);
+        }
+    }
+}
 
-Structure: src/components/{atoms,molecules,pages,hooks}, src/auth/, src/state/
-- Atoms: primitive components (Button, Input, Select, StatusBadge, Surface)
-- Molecules: composite components 
-- Pages: full page components
-- Hooks: custom React hooks in src/components/hooks/
-- State: Redux Toolkit slices in src/state/
+Folder structure: server/QuietWealth.Backend/domains/<domain-name>/controllers/, services/, repositories/, models/
+Generate production-ready C# code following these exact patterns.
+Return files using:
+=== FILE: server/QuietWealth.Backend/domains/<path> ===
+<code>
+=== END FILE ===`;
 
-Stack: React 19, TypeScript, TailwindCSS 4, Redux Toolkit, Zod, Axios, i18next
-Auth: AuthGuard/GuestGuard/PolicyGuard with role-based permissions
-API: Use applicationFacade (facade pattern over Axios)
+const FRONTEND_SYSTEM = `You are the Frontend Agent for QuietWealth.
 
-Generate production-ready TypeScript/TSX following existing patterns.
-Return file paths and code only.`;
+REAL CODE PATTERNS TO FOLLOW EXACTLY:
+
+// Hook pattern (follow useLogin exactly):
+import { useState } from "react";
+import { useApplicationServices } from "./useApplicationServices";
+
+export function use<Name>() {
+  const { <service> } = useApplicationServices();
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function action(input: InputType) {
+    setError(null);
+    setIsLoading(true);
+    try {
+      const result = await <service>.action(input);
+      return result;
+    } catch (reason) {
+      setError("Action failed.");
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  }
+  return { action, isLoading, error };
+}
+
+// Component pattern (follow Input.tsx exactly):
+import { forwardRef } from "react";
+export const <Name> = forwardRef<HTMLElement, Props>(function <Name>({ className, ...props }, ref) {
+  return <element {...props} ref={ref} className={joinClasses("ui-<name>", className)} />;
+});
+
+Folder structure:
+- app/src/components/atoms/     → Input, Button, Badge etc
+- app/src/components/molecules/ → composite components
+- app/src/components/hooks/     → use<Name>.ts hooks
+- app/src/components/pages/     → full page components
+
+NEVER use axios/fetch directly — always use useApplicationServices().
+Return files using:
+=== FILE: app/src/<path> ===
+<code>
+=== END FILE ===`;
 
 const DATA_SYSTEM = `You are the Data Agent for QuietWealth.
-Generate SQL Server 2022 / Azure SQL DDL and EF Core entity classes.
-Follow conventions: snake_case table names, PascalCase C# classes, UUID primary keys.
-Include proper indexes and foreign keys.`;
+Generate SQL Server 2022 / Azure SQL DDL using Dapper conventions.
+Rules:
+- snake_case table and column names
+- UNIQUEIDENTIFIER primary keys with DEFAULT NEWID()
+- DATETIME2 for timestamps with DEFAULT GETUTCDATE()
+- Named Dapper parameters (@ParamName) never string interpolation
+- Always include indexes for foreign keys and WHERE clause columns
+Return files using:
+=== FILE: server/migrations/<path>.sql ===
+<sql>
+=== END FILE ===`;
 
 const INFRA_SYSTEM = `You are the Infrastructure Agent for QuietWealth.
 Generate Docker Compose additions, GitHub Actions workflow updates, and configuration changes.
@@ -87,9 +164,6 @@ Use this format per file:
 === END FILE ===
 `;
   const raw = await askClaude(FRONTEND_SYSTEM, userMsg, 4096);
-  console.log("=== FRONTEND RAW OUTPUT ===");
-  console.log(raw.substring(0, 1000));
-  console.log("=== END RAW ===");
   return raw;
 }
 
