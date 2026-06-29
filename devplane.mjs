@@ -57,18 +57,18 @@ async function featureCommand(args) {
     process.exit(1);
   }
 
-  console.log(`\n🔍 Generating specifications for: "${description}"`);
+  console.log(`\n Generating specifications for: "${description}"`);
   console.log("   This may take 30-60 seconds...\n");
 
   const result = await post("/feature", { description });
 
   if (result.error) {
-    console.error("❌ Error:", result.error);
+    console.error(" Error:", result.error);
     process.exit(1);
   }
 
-  console.log(`✅ Feature created: ${result.featureId}`);
-  console.log("\n📁 Spec files generated:");
+  console.log(` Feature created: ${result.featureId}`);
+  console.log("\n Spec files generated:");
   for (const [domain, info] of Object.entries(result.specs || {})) {
     console.log(`   ${domain.padEnd(15)} → ${info.filePath}`);
   }
@@ -94,11 +94,11 @@ async function buildCommand(args) {
   const result = await post("/build-feature", { featureId });
 
   if (result.error) {
-    console.error("❌ Error:", result.error);
+    console.error("Error:", result.error);
     process.exit(1);
   }
 
-  console.log("✅ Implementation generated:");
+  console.log("Implementation generated:");
   for (const [domain, files] of Object.entries(result.implementation || {})) {
     const count = Object.keys(files).length;
     console.log(`   ${domain.padEnd(15)} → ${count} file(s)`);
@@ -115,18 +115,18 @@ async function validateCommand(args) {
     process.exit(1);
   }
 
-  console.log(`\n🔎 Validating feature: ${featureId}`);
+  console.log(`\nValidating feature: ${featureId}`);
   console.log("   Running validation and generating tests...\n");
 
   const result = await post("/validate-feature", { featureId });
 
   if (result.error) {
-    console.error("❌ Error:", result.error);
+    console.error("Error:", result.error);
     process.exit(1);
   }
 
   const v = result.validation;
-  console.log(`${result.passed ? "✅" : "⚠️ "} Validation ${result.passed ? "PASSED" : "FAILED"}`);
+  console.log(`${result.passed ? "ok" : "not ok"} Validation ${result.passed ? "PASSED" : "FAILED"}`);
   console.log(`   Score: ${v?.score || "N/A"}/100`);
   console.log(`   Summary: ${v?.summary || ""}`);
 
@@ -156,19 +156,19 @@ async function releaseCommand(args) {
     process.exit(1);
   }
 
-  console.log(`\n🚀 Releasing feature: ${featureId}`);
+  console.log(`\n Releasing feature: ${featureId}`);
   console.log("   Running quality gates, CI, creating branch and PR...\n");
 
   const result = await post("/release-feature", { featureId });
 
   if (result.error) {
-    console.error("❌ Error:", result.error);
+    console.error("Error:", result.error);
     process.exit(1);
   }
 
   if (result.success) {
     const r = result.release;
-    console.log("✅ Feature released successfully!\n");
+    console.log("Feature released successfully!\n");
     console.log(`   Branch:       ${r.branchName}`);
     console.log(`   PR URL:       ${r.prUrl}`);
     console.log(`   Impl files:   ${r.implementationFiles}`);
@@ -179,9 +179,9 @@ async function releaseCommand(args) {
       console.log(`   ${gate.passed ? "✓" : "✗"} ${gate.name} – ${gate.detail}`);
     }
 
-    box("Done!", `PR is ready for review:\n${r.prUrl}\n\nMerge when approved 🎉`);
+    box("Done!", `PR is ready for review:\n${r.prUrl}\n\nMerge when approved!`);
   } else {
-    console.log("❌ Release failed – quality gates blocked:");
+    console.log("Release failed – quality gates blocked:");
     for (const gate of result.gates?.filter((g) => !g.passed) || []) {
       console.log(`   ✗ ${gate.name}: ${gate.detail}`);
     }
@@ -240,7 +240,7 @@ EXAMPLE:
 `);
 }
 
-// ── Main ──────────────────────────────────────────────────────
+// ── Main 
 
 const [, , command, ...args] = process.argv;
 

@@ -1,10 +1,12 @@
+// Makes calls to the Anthropic Claude API, or returns mock responses
+
 import Anthropic from "@anthropic-ai/sdk";
 import { MOCK_SPECS, MOCK_IMPLEMENTATION, MOCK_VALIDATION, MOCK_TESTS } from "./mockResponses.js";
 
-const IS_MOCK = process.env.AI_MOCK === "true";
+const IS_MOCK = process.env.AI_MOCK === "true"; // Mock flag (true or false)
 const client = IS_MOCK ? null : new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-if (IS_MOCK) {
+if (IS_MOCK) { // Validate that the mock mode is enabled and log a message
   console.log("AI_MOCK=true — using mock responses (no API calls)");
 }
 
@@ -21,6 +23,18 @@ export async function askClaude(systemPrompt, userMessage, maxTokens = 4096) {
 
 function getMockResponse(userMessage) {
   const msg = userMessage.toLowerCase();
+
+  // Validation
+  if (msg.includes("validate") || msg.includes("validation")) {
+    return JSON.stringify(MOCK_VALIDATION);
+  }
+
+  // Tests
+  if (msg.includes("unit tests") || msg.includes("xunit") || msg.includes("jest")) {
+    return Object.entries(MOCK_TESTS.files)
+      .map(([path, code]) => `=== TEST FILE: ${path} ===\n${code}\n=== END TEST FILE ===`)
+      .join("\n\n");
+  }
 
   // Spec generation
   if (msg.includes("frontend specification") || msg.includes("react components")) {
@@ -60,18 +74,6 @@ function getMockResponse(userMessage) {
   if (msg.includes("sql migration") || msg.includes("ef core")) {
     return Object.entries(MOCK_IMPLEMENTATION.data)
       .map(([path, code]) => `=== FILE: ${path} ===\n${code}\n=== END FILE ===`)
-      .join("\n\n");
-  }
-
-  // Validation
-  if (msg.includes("validate") || msg.includes("validation")) {
-    return JSON.stringify(MOCK_VALIDATION);
-  }
-
-  // Tests
-  if (msg.includes("unit tests") || msg.includes("xunit") || msg.includes("jest")) {
-    return Object.entries(MOCK_TESTS.files)
-      .map(([path, code]) => `=== TEST FILE: ${path} ===\n${code}\n=== END TEST FILE ===`)
       .join("\n\n");
   }
 

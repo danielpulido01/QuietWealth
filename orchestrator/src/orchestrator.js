@@ -24,7 +24,7 @@ const BUILD_ENGINE  = process.env.BUILD_ENGINE_URL  || "http://build-engine:4002
 const VALIDATE_ENGINE = process.env.VALIDATE_ENGINE_URL || "http://validate-engine:4003";
 const RELEASE_ENGINE = process.env.RELEASE_ENGINE_URL || "http://release-engine:4004";
 
-// ── Helpers ──────────────────────────────────────────────────
+// ── Helpers 
 
 async function callEngine(url, payload) {
   const res = await fetch(url, {
@@ -48,18 +48,18 @@ function slugify(text) {
     .substring(0, 60);
 }
 
-// ── Health ───────────────────────────────────────────────────
+// ── Health 
 
 app.get("/health", (_, res) => res.json({ status: "ok", service: "orchestrator" }));
 
-// ── Web UI ───────────────────────────────────────────────────
+// ── Web UI 
 
 app.get("/", (_, res) => {
   res.setHeader("Content-Type", "text/html");
   res.send(UI_HTML);
 });
 
-// ── /feature ─────────────────────────────────────────────────
+// ── /feature 
 // Command: /feature "description"
 // Calls the Spec Engine to generate all domain specs.
 
@@ -94,7 +94,7 @@ app.post("/feature", async (req, res) => {
 
     res.json({
       featureId,
-      message: "✅ Specifications generated successfully",
+      message: "Specifications generated successfully",
       specs: result.specs,
       nextCommand: `/build-feature ${featureId}`,
     });
@@ -104,7 +104,7 @@ app.post("/feature", async (req, res) => {
   }
 });
 
-// ── /build-feature ────────────────────────────────────────────
+// ── /build-feature 
 // Command: /build-feature <feature-id>
 
 app.post("/build-feature", async (req, res) => {
@@ -133,7 +133,7 @@ app.post("/build-feature", async (req, res) => {
 
     res.json({
       featureId,
-      message: "✅ Feature implementation generated",
+      message: "Feature implementation generated",
       implementation: result.implementation,
       nextCommand: `/validate-feature ${featureId}`,
     });
@@ -143,7 +143,7 @@ app.post("/build-feature", async (req, res) => {
   }
 });
 
-// ── /validate-feature ─────────────────────────────────────────
+// ── /validate-feature 
 // Command: /validate-feature <feature-id>
 
 app.post("/validate-feature", async (req, res) => {
@@ -195,8 +195,8 @@ app.post("/validate-feature", async (req, res) => {
       featureId,
       passed: result.passed,
       message: result.passed
-        ? "✅ Validation passed – tests generated"
-        : "⚠️  Validation failed – implementation updated with feedback",
+        ? "Validation passed – tests generated"
+        : "Validation failed – implementation updated with feedback",
       validation: result.validation,
       tests: result.tests,
       nextCommand: result.passed ? `/release-feature ${featureId}` : `/validate-feature ${featureId}`,
@@ -207,7 +207,7 @@ app.post("/validate-feature", async (req, res) => {
   }
 });
 
-// ── /release-feature ──────────────────────────────────────────
+// ── /release-feature 
 // Command: /release-feature <feature-id>
 
 app.post("/release-feature", async (req, res) => {
@@ -251,8 +251,8 @@ app.post("/release-feature", async (req, res) => {
       featureId,
       success: result.success,
       message: result.success
-        ? `🚀 Feature released – PR ready for review`
-        : "❌ Release failed – check quality gates",
+        ? ` Feature released – PR ready for review`
+        : " Release failed – check quality gates",
       release: result.release,
     });
   } catch (err) {
@@ -261,14 +261,14 @@ app.post("/release-feature", async (req, res) => {
   }
 });
 
-// ── /features (list) ──────────────────────────────────────────
+// ── /features (list) 
 
 app.get("/features", async (_, res) => {
   const features = await listFeatures().catch(() => []);
   res.json({ features });
 });
 
-// ── /features/:id (detail) ────────────────────────────────────
+// ── /features/:id (detail) 
 
 app.get("/features/:id", async (req, res) => {
   const feature = await loadFeature(req.params.id).catch(() => null);
@@ -276,7 +276,7 @@ app.get("/features/:id", async (req, res) => {
   res.json(feature);
 });
 
-// ── Web UI HTML ───────────────────────────────────────────────
+// ── Web UI HTML 
 
 const UI_HTML = `<!DOCTYPE html>
 <html lang="en">
